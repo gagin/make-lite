@@ -1,0 +1,17 @@
+BINARY?=make-lite
+
+include included.mk
+
+all: build included_target
+
+build: main.go
+	go build -o $BINARY main.go
+
+clean:
+	rm -f $BINARY
+
+print_env:
+	echo "PATH is: $PATH"
+
+print_shell:
+	echo "Current directory is: $(shell pwd)"
