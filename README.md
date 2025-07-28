@@ -1,19 +1,18 @@
 # make-lite
 
-A simplified `make`-compatible build automation tool written in Go.
+A simplified build automation tool written in Go, inspired by GNU Make but with a streamlined feature set.
 
 ## Features
 
-- Rule parsing (targets, dependencies, commands)
-- Dependency resolution and execution order
-- File modification time checks for rebuilding targets
-- Circular dependency detection
-- Variable assignment (`VARIABLE=value`)
-- Environment variable loading
-- Conditional variable assignment (`VARIABLE?=value`)
-- Variable substitution (`$NAME`)
-- Shell command substitution (`$(shell command)`)
-- Makefile inclusion (`include` directive)
+- **Simplified Rule Definition**: Rules are defined as the first line after an empty line, with targets on the left of a colon and sources (dependencies) on the right.
+- **Automatic Phony Targets**: Any target that does not correspond to an existing file will automatically trigger its associated commands, effectively behaving as a "phony" target without explicit declaration.
+- **Dependency Resolution**: Automatically resolves and executes dependencies in the correct order.
+- **File Freshness Checks**: Commands for a target are executed only if the target file does not exist or is older than any of its dependencies.
+- **Circular Dependency Detection**: Prevents infinite loops by detecting and reporting circular dependencies.
+- **Variable Management**: Supports `VARIABLE=value` assignments, `VARIABLE?=value` for conditional assignment (if not already set), and `$NAME` for variable substitution. Variables can also be read from the environment.
+- **Shell Command Execution**: Allows `$(shell command)` for dynamic command output inclusion.
+- **Makefile Inclusion**: Supports `include` directives to combine multiple makefiles into a single in-memory representation before processing. The default makefile name is `Makefile-lite`.
+- **Comment Handling**: Ignores lines starting with `#` (unescaped).
 
 ## Usage
 
@@ -22,6 +21,8 @@ To run a target, use:
 ```bash
 go run main.go <target_name>
 ```
+
+If no target is specified, `make-lite` will attempt to execute the first rule defined in the `Makefile-lite`.
 
 Examples:
 
