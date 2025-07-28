@@ -6,6 +6,7 @@ A simplified build automation tool written in Go, inspired by GNU Make but with 
 
 - **Simplified Rule Definition**: Rules are defined as the first line after an empty line, with targets on the left of a colon and sources (dependencies) on the right.
 - **Automatic Phony Targets**: Any target that does not correspond to an existing file will automatically trigger its associated commands, effectively behaving as a "phony" target without explicit declaration.
+- **Directory Handling**: If a target or source is a directory, it is treated as if it were a missing file, forcing its associated commands to run.
 - **Dependency Resolution**: Automatically resolves and executes dependencies in the correct order.
 - **File Freshness Checks**: Commands for a target are executed only if the target file does not exist or is older than any of its dependencies.
 - **Circular Dependency Detection**: Prevents infinite loops by detecting and reporting circular dependencies.
