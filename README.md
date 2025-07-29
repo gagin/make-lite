@@ -12,7 +12,7 @@
 - **Automatic Directory Creation**: Automatically runs `mkdir -p` for your targets so you don't have to.
 - **Powerful Variable System**:
     - `VAR = value` (unconditional) and `VAR ?= value` (conditional).
-    - Precedence: Shell environment > Makefile (`=`) > `load_env` files > Makefile (`?=`).
+    - Precedence: Makefile (`=`) > Shell environment >  `load_env` files > Makefile (`?=`).
     - `$(shell ...)` for dynamic command output, which can access the parent shell's environment (`$HOME`, etc.).
 - **Smart Environment Handling**:
     - `load_env .env`: A dedicated directive to load environment files (and strip quotes from values!).
