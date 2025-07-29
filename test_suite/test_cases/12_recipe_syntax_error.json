@@ -1,0 +1,20 @@
+{
+  "name": "Recipe syntax error vs shell expansion success",
+  "command": "test-recipe-fail",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "# This $(shell) command should succeed and produce a value with special characters.\nVAR_WITH_PARENS = $(shell echo 'output with (special) chars')\n\ntest-recipe-fail:\n\t# This recipe command should FAIL because the unquoted variable\n\t# contains shell metacharacters, causing a syntax error in bash.\n\techo $(VAR_WITH_PARENS)"
+    }
+  ],
+  "checks": {
+    "exit_code": 1,
+    "stdout_contains": [
+      "recipe for target 'test-recipe-fail' failed",
+      "syntax error near unexpected token `('"
+    ],
+    "stdout_not_contains": [
+      "Error executing shell command"
+    ]
+  }
+}

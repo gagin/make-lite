@@ -61,12 +61,11 @@ def run_test_case(binary_path, test_case_path, test_dir_base):
     if case.get("command"):
         command.extend(case["command"].split())
 
+    # The environment for the subprocess inherits from the runner's environment
     env = os.environ.copy()
     env.update(case.get("env_vars", {}))
-    
-    # Pass LOG_LEVEL from the runner's environment to the test environment
-    if "LOG_LEVEL" in os.environ:
-        env["LOG_LEVEL"] = os.environ["LOG_LEVEL"]
+    # Ensure a predictable shell for tests
+    env["SHELL"] = "/bin/bash"
     
     proc = subprocess.run(
         command,
