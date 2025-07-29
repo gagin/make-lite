@@ -1,0 +1,20 @@
+{
+  "name": "Shell passthrough with $$",
+  "command": "say-hello",
+  "env_vars": {
+    "GREETING": "Hello from Shell"
+  },
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "GREETING = Hello from Makefile\n\nsay-hello:\n\t@echo \"Makefile says: $(GREETING)\"\n\t@echo \"Shell says: $$GREETING\""
+    }
+  ],
+  "checks": {
+    "stdout_contains": [
+      "Makefile says: Hello from Makefile",
+      "Shell says: Hello from Shell"
+    ],
+    "exit_code": 0
+  }
+}

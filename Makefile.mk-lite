@@ -1,0 +1,49 @@
+# ==============================================================================
+# Main Makefile for the make-lite project.
+#
+# This file uses make-lite itself to build, test, and install the tool.
+# ==============================================================================
+
+# --- Variables ---
+# The name of the final executable.
+BINARY_NAME = make-lite
+# The path to the main Go package.
+CMD_PATH = ./cmd/make-lite
+# The directory where the binary will be installed.
+# Use ?= to allow overriding from the environment (e.g., INSTALL_DIR=/usr/local/bin).
+INSTALL_DIR ?= $(shell echo $HOME)/.local/bin
+# Path to the Python test suite runner.
+TEST_RUNNER = ./test_suite/run_tests.py
+# Find all Go source files to use as dependencies for the build.
+GO_SOURCES = $(shell find $(CMD_PATH) -name '*.go')
+
+# --- Default Target ---
+# The default target is `build`. Running `go run ./cmd/make-lite` will build the binary.
+all: build
+
+# --- Main Targets ---
+
+# Build the make-lite binary.
+build: $(GO_SOURCES)
+	@echo "Tidying modules..."
+	go mod tidy
+	@echo "Building $(BINARY_NAME)..."
+	go build -o $(BINARY_NAME) $(CMD_PATH)
+
+# Install the make-lite binary to the user's local bin directory.
+install: build
+	@echo "Installing $(BINARY_NAME) to $(INSTALL_DIR)..."
+	mkdir -p $(INSTALL_DIR)
+	cp $(BINARY_NAME) $(INSTALL_DIR)/
+
+# Run the Python test suite.
+test:
+	@echo "Running test suite..."
+	python3 $(TEST_RUNNER)
+
+# Clean build artifacts and Go caches.
+clean:
+	@echo "Cleaning artifacts and caches..."
+	rm -f $(BINARY_NAME)
+	rm -f ./test_suite/make-lite-test
+	go clean -cache -modcache -testcache

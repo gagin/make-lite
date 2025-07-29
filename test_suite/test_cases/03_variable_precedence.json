@@ -1,0 +1,21 @@
+{
+  "name": "Variable precedence (Makefile = > Shell)",
+  "command": "all",
+  "env_vars": {
+    "VAR1": "shell_loses",
+    "VAR2": "shell_loses"
+  },
+  "files": [
+    {
+      "path": ".env", "content": "VAR3=env_file_val"
+    },
+    {
+      "path": "Makefile.mk-lite",
+      "content": "load_env .env\nVAR1 = makefile_wins\nVAR2 ?= q_equals_loses\nVAR4 ?= q_equals_wins\nall:\n\t@echo VAR1=$(VAR1) VAR2=$(VAR2) VAR3=$(VAR3) VAR4=$(VAR4)"
+    }
+  ],
+  "checks": {
+    "stdout_contains": ["VAR1=makefile_wins VAR2=shell_loses VAR3=env_file_val VAR4=q_equals_wins"],
+    "exit_code": 0
+  }
+}

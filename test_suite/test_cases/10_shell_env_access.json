@@ -1,0 +1,15 @@
+{
+  "name": "Shell command can access parent environment",
+  "command": "check-env",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "TEST_VAR = $(shell echo \"prefix-$(HOME)-suffix\")\ncheck-env:\n\t@echo $(TEST_VAR)"
+    }
+  ],
+  "checks": {
+    "stdout_not_contains": ["prefix--suffix"],
+    "stdout_contains": ["prefix-"],
+    "exit_code": 0
+  }
+}
