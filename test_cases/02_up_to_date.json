@@ -1,0 +1,16 @@
+{
+  "name": "Up-to-date target should not run",
+  "command": "target.txt",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "target.txt: source.txt\n\ttouch target.txt"
+    },
+    { "path": "source.txt", "content": "source" },
+    { "path": "target.txt", "content": "target" }
+  ],
+  "checks": {
+    "stdout_not_contains": ["touch target.txt"],
+    "exit_code": 0
+  }
+}

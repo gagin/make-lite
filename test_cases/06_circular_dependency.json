@@ -1,0 +1,14 @@
+{
+  "name": "Circular dependency detection",
+  "command": "a",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "a: b\nb: a"
+    }
+  ],
+  "checks": {
+    "stdout_contains": ["circular dependency detected"],
+    "exit_code": 1
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "load_env quote stripping",
+  "command": "all",
+  "files": [
+    { "path": ".env", "content": "SECRET=\"my super secret\"\nAPI_KEY='single_quoted'" },
+    { "path": "Makefile.mk-lite", "content": "load_env .env\nall:\n\t@echo SECRET=$(SECRET) API_KEY=$(API_KEY)"}
+  ],
+  "checks": {
+    "stdout_contains": ["SECRET=my super secret API_KEY=single_quoted"],
+    "exit_code": 0
+  }
+}

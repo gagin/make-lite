@@ -1,0 +1,14 @@
+{
+  "name": "Adjacent rules without empty lines",
+  "command": "target2",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "target1: \n\techo Building target 1\ntarget2: target1\n\techo Building target 2"
+    }
+  ],
+  "checks": {
+    "stdout_contains": ["Building target 1", "Building target 2"],
+    "exit_code": 0
+  }
+}

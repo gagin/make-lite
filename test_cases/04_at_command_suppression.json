@@ -1,0 +1,15 @@
+{
+  "name": "@ command suppression",
+  "command": "all",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "all:\n\t@echo silent_output\n\techo loud_output"
+    }
+  ],
+  "checks": {
+    "stdout_contains": ["silent_output", "echo loud_output"],
+    "stdout_not_contains": ["@echo silent_output"],
+    "exit_code": 0
+  }
+}

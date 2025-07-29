@@ -1,0 +1,14 @@
+{
+  "name": "Shell command escaping and literals",
+  "command": "test-shell",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "TEST_STRING = $(shell echo 'A literal paren \\( inside another (nested parens) \\), a comment #, and a backslash \\\\')\ntest-shell:\n\t@echo $(TEST_STRING)"
+    }
+  ],
+  "checks": {
+    "stdout_contains": ["A literal paren ( inside another (nested parens) ), a comment #, and a backslash \\"],
+    "exit_code": 0
+  }
+}

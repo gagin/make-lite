@@ -1,0 +1,17 @@
+{
+  "name": "Multi-target rule rebuilds if one target is missing",
+  "command": "all",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "all: a.txt b.txt\na.txt b.txt: source.txt\n\ttouch a.txt b.txt"
+    },
+    { "path": "source.txt", "content": "source" },
+    { "path": "a.txt", "content": "a" }
+  ],
+  "checks": {
+    "stdout_contains": ["touch a.txt b.txt"],
+    "files_exist": ["a.txt", "b.txt"],
+    "exit_code": 0
+  }
+}   
