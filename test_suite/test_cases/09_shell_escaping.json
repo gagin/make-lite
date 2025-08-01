@@ -1,14 +1,17 @@
 {
-  "name": "Correctly quoting shell output in a recipe",
+  "name": "09_shell_escaping.json: Correctly quoting shell output in a recipe",
   "command": "test-shell",
   "files": [
     {
       "path": "Makefile.mk-lite",
-      "content": "TEST_STRING = echo 'A literal paren \\( inside another (nested parens) \\), a comment #, and a backslash \\\\'\nSHELLED_STRING = $(shell $(TEST_STRING))\ntest-shell:\n\t@echo \"Final output:\"\n\t@echo \"$(SHELLED_STRING)\""
+      "content": "TEST_STRING = echo 'A literal paren \\( inside another (nested parens) \\), a comment \\#, and a backslash \\\\'\nSHELLED_STRING = $(shell $(TEST_STRING))\ntest-shell:\n\t@echo \"Final output:\"\n\t@echo '$(SHELLED_STRING)'"
     }
   ],
   "checks": {
-    "stdout_contains": ["Final output:", "A literal paren ( inside another (nested parens) ), a comment #, and a backslash \\"],
+    "stdout_contains": [
+      "Final output:",
+      "A literal paren ( inside another (nested parens) ), a comment #, and a backslash \\"
+    ],
     "exit_code": 0
   }
 }

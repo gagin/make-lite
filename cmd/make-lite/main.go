@@ -22,7 +22,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	vars := NewVariableStore()
+	isDebug := os.Getenv("LOG_LEVEL") == "DEBUG"
+	vars := NewVariableStore(isDebug)
 	parser := NewParser(vars)
 
 	makefile, err := parser.ParseFile(cfg.Makefile)
@@ -38,10 +39,11 @@ func main() {
 			os.Exit(1)
 		}
 		target = makefile.Rules[0].Targets[0]
+		// This message is helpful and only appears when the user doesn't specify a target.
 		fmt.Printf(StatusUsingDefaultTarget, target)
 	}
 
-	engine, err := NewEngine(makefile, vars)
+	engine, err := NewEngine(makefile, vars, isDebug)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, ErrorInitEngine, err)
 		os.Exit(1)
@@ -53,5 +55,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Println(StatusBuildSuccess)
+	if isDebug {
+		fmt.Println(StatusBuildSuccess)
+	}
 }

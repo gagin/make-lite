@@ -60,9 +60,8 @@ The makefile is processed into a single, clean in-memory buffer before execution
 -   **Sequential Evaluation**: Lines are parsed and evaluated in the order they appear. Variable assignments take effect immediately and are available to subsequent lines.
 -   **Rule Definition**: The **first line in a section that contains an unescaped colon (`:`)** is a **rule definition**. It consists of one or more whitespace-separated **targets** to the left of the colon, and zero or more **sources** to the right.
 -   **Error Condition**: A rule definition line containing more than one unescaped colon is a fatal error.
--   **Recipe**: All subsequent non-empty, non-comment lines are part of that rule's **recipe**.
--   **Recipe Termination**: A recipe is terminated by the **first empty line** or by the end of the file. An empty line's only function is to signal the end of a recipe.
--   **Reasoning**: This model is simple and requires no complex look-ahead or block analysis. A line is either an assignment, a rule definition, or part of a recipe. The empty line provides a clear, visual delimiter between a rule's recipe and whatever follows, enhancing readability.
+-   **Recipe**: All subsequent non-comment lines are part of that rule's **recipe** until next rule line or an empty line is encountered
+-   **Reasoning**: This model is simple and requires no complex look-ahead or block analysis. A line is either an assignment, a rule definition, or part of a recipe. The empty line provides a clear, visual delimiter between a rule's recipe and whatever follows, enhancing readability. Next rule line is also what users may typically do.
 
 ## 3. Variable & Environment System
 

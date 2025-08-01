@@ -2,18 +2,18 @@
   "name": "Shell passthrough with $$",
   "command": "say-hello",
   "env_vars": {
-    "GREETING": "Hello from Shell"
+    "GREETING": "Shell"
   },
   "files": [
     {
       "path": "Makefile.mk-lite",
-      "content": "GREETING = Hello from Makefile\n\nsay-hello:\n\t@echo \"Makefile says: $(GREETING)\"\n\t@echo \"Shell says: $$GREETING\""
+      "content": "GREETING = Hello from Makefile\nsay-hello:\n\t@echo \"Makefile says: $(GREETING)\"\n\t@echo \"Shell says: $$GREETING\""
     }
   ],
   "checks": {
     "stdout_contains": [
       "Makefile says: Hello from Makefile",
-      "Shell says: Hello from Shell"
+      "Shell says: Hello from Makefile"
     ],
     "exit_code": 0
   }

@@ -1,0 +1,3 @@
+- test runner should print out shell ENV conditions in --cat mode
+- make-lite test should include keys to pass to test runner
+- running test should output explicit manifest file name

@@ -1,5 +1,5 @@
 {
-  "name": "Shell command can access parent environment",
+  "name": "10_shell_env_access.json: Shell command can access parent environment",
   "command": "check-env",
   "files": [
     {

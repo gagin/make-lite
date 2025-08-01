@@ -28,6 +28,3 @@ go.sum
 .DS_Store
 thumbs.db
 
-# make-lite specific
-make-lite
-Makefile-lite-cycle
