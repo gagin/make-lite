@@ -10,14 +10,29 @@ A simple, predictable build tool that fixes the most common annoyances of GNU Ma
 
 If you love the core dependency-graph concept of Make but are tired of `.PHONY`, tab errors, and confusing variable expansion rules, `make-lite` is for you.
 
-## Core Features
+### Core Features
 
--   **Flexible Recipe Indentation**: Like GNU Make, recipes must be indented. However, `make-lite` allows **any indentation (spaces or tabs)**. This completely eliminates GNU Make's strict 'tab-only' requirement and the infamous 'missing separator' errors it causes.
--   **No More `.PHONY`**: Any target that doesn't correspond to a file on disk is automatically treated as "phony" and will always run.
--   **Automatic Directory Creation**: If a rule's target is in a directory that doesn't exist, `make-lite` will create it automatically before running the recipe.
--   **Simplified & Powerful Variables**: `make-lite` has a clean variable precedence and supports GNU Make's powerful implicit `$(shell ...)` behavior without the confusing parts.
--   **Helpful Error Messages**: `make-lite` detects common unsupported GNU Make functions and provides clear errors instead of failing silently. Recipe failures are reported cleanly and precisely.
--   **Seamless Migration**: The syntax is familiar enough that most simple Makefiles can be migrated quickly, often with assistance from an LLM.
+`make-lite` directly addresses the most common and frustrating aspects of GNU Make with a set of simple, predictable design choices.
+
+-   **Intuitive Dependency Rules (The Core Fix)**  
+    This is the most important feature. A rule runs if **any** of its target files are missing, or if **any** source file is newer than **any** target file. This elegant logic solves multiple GNU Make frustrations at once:
+    -   **Multi-target rules just work.** A rule like `file_pb.go file_grpc.pb.go: file.proto` will correctly re-run if *either* generated file is deleted.
+    -   **Code generators are handled perfectly.** `protoc` creating two files from one source is no longer a problem.
+
+-   **Flexible Recipe Indentation**  
+    While GNU Make's principle that recipes must be indented is sound, its implementation is famously brittle. `make-lite` fixes this:
+    -   **Any indentation (spaces or tabs) is valid.** This completely eliminates the strict 'tab-only' requirement and the infamous 'missing separator' errors it causes, embracing the philosophy that indentation is for human readability, and humans should be free to choose their style.
+
+-   **Implicit & Non-Infectious Phony Targets**  
+    Any target that doesn't correspond to a file on disk is automatically treated as "phony" (it will always run). This has two major benefits:
+    -   It completely eliminates the need for `.PHONY` boilerplate.
+    -   It fixes the confusing GNU Make behavior where a phony target can cause its file-based dependencies to be rebuilt unnecessarily.
+
+-   **Automatic Directory Creation**  
+    If a rule's target is in a directory that doesn't exist (e.g., `bin/my_app`), `make-lite` will create the parent directory (`bin/`) automatically before running the recipe. No more `mkdir -p` boilerplate.
+
+-   **Practical `.env` Parsing**  
+    When using `load_env .env`, `make-lite` automatically strips surrounding quotes (`"` or `'`) from the values. This is the behavior users almost always want and expect, but have to handle manually in shell scripts.
 
 ## How It Works (The Specification)
 
@@ -170,6 +185,7 @@ You can use a capable LLM (like GPT-4, Claude 3, etc.) to automate much of the c
 
 **Prompt for LLM-based Makefile Conversion**
 
+```
 You are an expert build system engineer specializing in migrating projects from GNU Make to simpler, more modern alternatives. Your task is to analyze the provided GNU Makefile and convert it into the `make-lite` format.
 
 First, understand the core principles of `make-lite`, which differ from GNU Make:
@@ -204,6 +220,7 @@ Follow these conversion rules precisely:
 Convert the following GNU Makefile to `make-lite` format.
 
 **GNU Makefile Input:**
+```
 ---
 
 ## Installation
