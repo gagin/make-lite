@@ -1,0 +1,19 @@
+{
+  "name": "Missing unmakeable dependency is a fatal error",
+  "command": "all",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "all: a.txt\n\na.txt: b.txt\n\t@echo \"This should not be printed.\"\n\ttouch a.txt"
+    }
+  ],
+  "checks": {
+    "exit_code": 1,
+    "stderr_contains": [
+      "Dependency 'b.txt' not found for target 'a.txt', and no rule available to create it"
+    ],
+    "stdout_does_not_contain": [
+        "This should not be printed."
+    ]
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "name": "Unsupported GNU Make function error",
+  "command": "all",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "SOURCES = a.c b.c\nOBJECTS = $(patsubst %.c,%.o,$(SOURCES))\nall:\n\t@echo $(OBJECTS)"
+    }
+  ],
+  "checks": {
+    "exit_code": 1,
+    "stderr_contains": [
+      "GNU Make function 'patsubst ...' is not supported"
+    ]
+  }
+}

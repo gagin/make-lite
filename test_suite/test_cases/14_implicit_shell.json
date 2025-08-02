@@ -1,0 +1,16 @@
+{
+  "name": "Implicit shell command fallback",
+  "command": "all",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "all:\n\t@echo \"The current year is $(date +%Y)\""
+    }
+  ],
+  "checks": {
+    "exit_code": 0,
+    "stdout_contains": [
+      "The current year is 20"
+    ]
+  }
+}

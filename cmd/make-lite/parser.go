@@ -191,66 +191,66 @@ func (p *Parser) parseContent(content string) (*Makefile, error) {
 		line := lines[i]
 		trimmedLine := strings.TrimSpace(line)
 
-		// Skip empty lines, which can act as separators.
 		if trimmedLine == "" {
 			continue
 		}
 
-		// A non-indented line must be a top-level statement.
 		isIndented := len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
 		if isIndented {
-			// This is an error because it's not associated with a preceding rule.
 			return nil, fmt.Errorf("invalid line %d: unexpected indented line, must follow a rule definition: \"%s\"", i+1, trimmedLine)
 		}
 
-		// Check for a rule definition.
 		if left, right, ok := splitOnUnescaped(trimmedLine, ':'); ok && !strings.Contains(left, "=") {
 			if _, _, hasMulti := splitOnUnescaped(right, ':'); hasMulti {
 				return nil, fmt.Errorf("invalid rule with multiple colons on line %d: \"%s\"", i+1, trimmedLine)
 			}
 
-			targets := strings.Fields(unescapeString(left))
-			sources := strings.Fields(unescapeString(right))
+			// Expand variables in targets and sources at parse time.
+			expandedLeft, err := p.variableStore.Expand(left)
+			if err != nil {
+				return nil, fmt.Errorf("on line %d: error expanding targets: %w", i+1, err)
+			}
+			expandedRight, err := p.variableStore.Expand(right)
+			if err != nil {
+				return nil, fmt.Errorf("on line %d: error expanding sources: %w", i+1, err)
+			}
+
+			targets := strings.Fields(unescapeString(expandedLeft))
+			sources := strings.Fields(unescapeString(expandedRight))
 			if len(targets) == 0 {
 				return nil, fmt.Errorf("rule with no target on line %d: \"%s\"", i+1, trimmedLine)
 			}
 
 			rule := &Rule{Targets: targets, Sources: sources, Recipe: []string{}, Origin: fmt.Sprintf("line %d", i+1)}
 
-			// The recipe is the block of all subsequent indented lines.
 			j := i + 1
 			for ; j < len(lines); j++ {
 				recipeLine := lines[j]
 				if strings.TrimSpace(recipeLine) == "" {
-					// An empty line in a recipe block is just skipped.
 					rule.Recipe = append(rule.Recipe, recipeLine)
 					continue
 				}
-
 				recipeIsIndented := len(recipeLine) > 0 && (recipeLine[0] == ' ' || recipeLine[0] == '\t')
 				if !recipeIsIndented {
-					break // A non-indented line terminates the recipe.
+					break
 				}
 				rule.Recipe = append(rule.Recipe, recipeLine)
 			}
-			i = j - 1 // Move parser to the last line processed.
+			i = j - 1
 			makefile.AddRule(rule)
 
 		} else if left, right, ok := splitOnUnescaped(trimmedLine, '='); ok {
-			// Handle assignments.
 			op := "="
 			if strings.HasSuffix(strings.TrimSpace(left), "?") {
 				op = "?="
 				left = strings.TrimSpace(left[:len(left)-1])
 			}
-
 			keyPart := strings.TrimSpace(left)
 			keyTokens := strings.Fields(keyPart)
 			if len(keyTokens) == 0 {
 				return nil, fmt.Errorf("invalid assignment with no variable name on line %d: \"%s\"", i+1, trimmedLine)
 			}
 			varName := keyTokens[len(keyTokens)-1]
-			// Store variable values raw to preserve backslashes for expansion time.
 			value := strings.TrimSpace(right)
 			source := sourceMakefileUnconditional
 			if op == "?=" {
@@ -259,14 +259,12 @@ func (p *Parser) parseContent(content string) (*Makefile, error) {
 			p.variableStore.Set(varName, value, source)
 
 		} else if strings.HasPrefix(trimmedLine, "load_env ") {
-			// Handle directives.
 			envPath := strings.TrimSpace(trimmedLine[len("load_env"):])
 			envPath = trimQuotes(envPath)
 			if err := p.loadEnvFile(envPath); err != nil {
 				return nil, fmt.Errorf("on line %d: %w", i+1, err)
 			}
 		} else {
-			// This line is not a valid top-level statement.
 			return nil, fmt.Errorf("invalid line %d: not a rule, assignment, or directive: \"%s\"", i+1, trimmedLine)
 		}
 	}
@@ -277,6 +275,9 @@ func (p *Parser) parseContent(content string) (*Makefile, error) {
 func (p *Parser) loadEnvFile(filename string) (err error) {
 	file, err := os.Open(filename)
 	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // Silently ignore missing .env files
+		}
 		return fmt.Errorf("could not load env file %s: %w", filename, err)
 	}
 	defer func() {

@@ -10,25 +10,31 @@ BINARY_NAME = make-lite
 # The path to the main Go package.
 CMD_PATH = ./cmd/make-lite
 # The directory where the binary will be installed.
-# Use ?= to allow overriding from the environment (e.g., INSTALL_DIR=/usr/local/bin).
 INSTALL_DIR ?= $(shell echo $HOME)/.local/bin
-# Path to the Python test suite runner.
+
+# Versioning
+# Get the version string from git tags. Fallback to "dev" if not in a git repo.
+APP_VERSION = $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
+# Go linker flags to inject the version string into the binary.
+LDFLAGS = -ldflags="-X main.AppVersion=$(APP_VERSION)"
+
+# Test suite runner
 TEST_RUNNER = ./test_suite/run_tests.py
 # Find all Go source files to use as dependencies for the build.
 GO_SOURCES = $(shell find $(CMD_PATH) -name '*.go')
 
 # --- Default Target ---
-# The default target is `build`. Running `go run ./cmd/make-lite` will build the binary.
+# The default target is `build`. Running `make` or `make-lite` will build the binary.
 all: build
 
 # --- Main Targets ---
 
-# Build the make-lite binary.
+# Build the make-lite binary with the version injected.
 build: $(GO_SOURCES)
 	@echo "Tidying modules..."
 	go mod tidy
-	@echo "Building $(BINARY_NAME)..."
-	go build -o $(BINARY_NAME) $(CMD_PATH)
+	@echo "Building $(BINARY_NAME) version $(APP_VERSION)..."
+	go build $(LDFLAGS) -o $(BINARY_NAME) $(CMD_PATH)
 
 # Install the make-lite binary to the user's local bin directory.
 install: build

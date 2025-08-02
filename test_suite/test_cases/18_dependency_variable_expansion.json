@@ -1,0 +1,27 @@
+{
+  "name": "Variable expansion in dependency list is correctly split",
+  "command": "all",
+  "files": [
+    {
+      "path": "source.txt",
+      "content": "This is the source."
+    },
+    {
+      "path": "Makefile.mk-lite",
+      "content": "DEPS = dep1.txt dep2.txt\n\nall: final.txt\n\nfinal.txt: $(DEPS)\n\t@echo \"Building final from its dependencies...\"\n\t@touch final.txt\n\ndep1.txt: source.txt\n\t@echo \"Building dep1...\"\n\t@touch dep1.txt\n\ndep2.txt: source.txt\n\t@echo \"Building dep2...\"\n\t@touch dep2.txt"
+    }
+  ],
+  "checks": {
+    "exit_code": 0,
+    "stdout_contains": [
+      "Building dep1...",
+      "Building dep2...",
+      "Building final from its dependencies..."
+    ],
+    "file_exists": [
+      "dep1.txt",
+      "dep2.txt",
+      "final.txt"
+    ]
+  }
+}

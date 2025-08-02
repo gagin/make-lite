@@ -1,10 +1,9 @@
 package main
 
 // --- Application Metadata ---
-const (
-	AppVersion      = "1.0.0"
-	DefaultMakefile = "Makefile.mk-lite"
-)
+var AppVersion = "1.0.0"
+
+const DefaultMakefile = "Makefile.mk-lite"
 
 // --- CLI UI Strings ---
 const (
@@ -24,13 +23,14 @@ const (
 	StatusUsingDefaultTarget = "make-lite: No target specified, using default target '%s'.\n"
 	StatusBuildSuccess       = "make-lite: Build finished successfully."
 	ErrorMissingDependency   = "Dependency '%s' not found for target '%s', and no rule available to create it."
+	ErrorUnsupportedFunction = "GNU Make function '$(%s ...)' is not supported."
 )
 
 // --- Engine Status Messages ---
 const (
 	StatusBuildingTarget        = "make-lite: Building target '%s'.\n"
 	StatusBuildingTargetBecause = "make-lite: Building target '%s' because %s.\n"
-	StatusTargetUpToDate        = "make-lite: Target '%s' is up to date.\n"
+	StatusTargetsUpToDate       = "make-lite: Targets '%s' are up to date.\n"
 	DebugExecutingCommand       = "DEBUG: executing recipe command: [%s]\n"
 	DebugShellCommand           = "DEBUG: executing shell command: [%s]\n"
 	DebugShellStdout            = "DEBUG: shell stdout: [%s]\n"

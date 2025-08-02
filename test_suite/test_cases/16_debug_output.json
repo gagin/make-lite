@@ -1,0 +1,22 @@
+{
+  "name": "LOG_LEVEL=DEBUG enables verbose output",
+  "command": "all",
+  "env_vars": {
+    "LOG_LEVEL": "DEBUG"
+  },
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "VAR = $(shell echo 'shell output')\nall:\n\t@echo \"Recipe says: $(VAR)\""
+    }
+  ],
+  "checks": {
+    "exit_code": 0,
+    "stdout_contains": ["Recipe says: shell output"],
+    "stderr_contains": [
+      "DEBUG: executing shell command: [echo 'shell output']",
+      "DEBUG: shell stdout: [shell output]",
+      "DEBUG: executing recipe command: [@echo \"Recipe says: shell output\"]"
+    ]
+  }
+}

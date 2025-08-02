@@ -1,0 +1,16 @@
+{
+  "name": "Indentation error on invalid recipe",
+  "command": "all",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "all:\n@echo \"This is not a valid indented recipe line.\""
+    }
+  ],
+  "checks": {
+    "exit_code": 1,
+    "stderr_contains": [
+      "invalid line 2: not a rule, assignment, or directive"
+    ]
+  }
+}

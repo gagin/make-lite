@@ -74,8 +74,12 @@ func (e *Engine) buildRecursive(targetName string) error {
 		if err != nil {
 			return fmt.Errorf("failed to expand source name '%s' for target '%s': %w", sourceName, targetName, err)
 		}
-		if err := e.buildRecursive(expandedSource); err != nil {
-			return err
+		// A single source can expand to a list of files.
+		sourceFiles := strings.Fields(expandedSource)
+		for _, sourceFile := range sourceFiles {
+			if err := e.buildRecursive(sourceFile); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -93,14 +97,20 @@ func (e *Engine) buildRecursive(targetName string) error {
 			}
 		}
 		if err := e.executeRecipe(rule); err != nil {
-			return fmt.Errorf("failed to build target '%s': %w", targetName, err)
+			// New, more informative error format.
+			return fmt.Errorf("recipe for target '%s' failed: %w", targetName, err)
 		}
 	} else {
-		fmt.Printf(StatusTargetUpToDate, targetName)
+		// Only show "up to date" messages in debug mode, and show them for the whole target group.
+		if e.isDebug {
+			targetList := strings.Join(rule.Targets, "', '")
+			fmt.Printf(StatusTargetsUpToDate, targetList)
+		}
 	}
 
 	for _, t := range rule.Targets {
 		// Mark all targets of the rule as built after execution.
+		// This prevents duplicate "up to date" messages for the same rule.
 		expandedTarget, err := e.vars.Expand(t)
 		if err != nil {
 			return fmt.Errorf("failed to expand target name '%s': %w", t, err)
@@ -220,7 +230,8 @@ func (e *Engine) executeRecipe(rule *Rule) error {
 		cmd.Stderr = os.Stderr
 
 		if err := cmd.Run(); err != nil {
-			return fmt.Errorf("command failed: %w", err)
+			// Return the raw error from the shell command. The caller will add context.
+			return err
 		}
 	}
 	return nil
