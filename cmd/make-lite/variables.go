@@ -10,38 +10,6 @@ import (
 	"strings"
 )
 
-var unsupportedMakeFunctions = map[string]struct{}{
-	"subst":      {},
-	"patsubst":   {},
-	"strip":      {},
-	"findstring": {},
-	"filter":     {},
-	"filter-out": {},
-	"sort":       {},
-	"word":       {},
-	"words":      {},
-	"wordlist":   {},
-	"firstword":  {},
-	"lastword":   {},
-	"dir":        {},
-	"notdir":     {},
-	"suffix":     {},
-	"basename":   {},
-	"addsuffix":  {},
-	"addprefix":  {},
-	"join":       {},
-	"foreach":    {},
-	"if":         {},
-	"or":         {},
-	"and":        {},
-	"call":       {},
-	"origin":     {},
-	"value":      {},
-	"info":       {},
-	"warning":    {},
-	"error":      {},
-}
-
 type varSource int
 
 const (
@@ -60,6 +28,7 @@ type VariableStore struct {
 	vars              map[string]varEntry
 	isDebug           bool
 	isExpandingForEnv bool // Flag to prevent shell recursion
+	cachedEnv         []string
 }
 
 func NewVariableStore(isDebug bool) *VariableStore {
@@ -77,15 +46,21 @@ func NewVariableStore(isDebug bool) *VariableStore {
 }
 
 func (vs *VariableStore) Set(key, value string, source varSource) {
+	// Invalidate the environment cache whenever a variable is set.
+	vs.cachedEnv = nil
+
 	existing, exists := vs.vars[key]
 
+	// Conditional assignment `?=` only ever sets if the variable does not exist.
 	if source == sourceMakefileConditional {
 		if !exists {
 			vs.vars[key] = varEntry{value: value, source: source}
 		}
-		return
+		return // A conditional assignment never overwrites.
 	}
 
+	// For unconditional `=`, `load_env`, and shell env, set if the new
+	// source has higher or equal precedence.
 	if !exists || source >= existing.source {
 		vs.vars[key] = varEntry{value: value, source: source}
 	}
@@ -101,7 +76,7 @@ func (vs *VariableStore) Get(key string) (string, bool) {
 
 func (vs *VariableStore) runShellCmd(command string) (string, error) {
 	if vs.isExpandingForEnv {
-		return "", nil
+		return "", nil // Prevent recursive shell execution.
 	}
 	if vs.isDebug {
 		fmt.Fprintf(os.Stderr, DebugShellCommand, command)
@@ -126,127 +101,132 @@ func (vs *VariableStore) runShellCmd(command string) (string, error) {
 	return strings.TrimRight(stdout.String(), "\n\r"), nil
 }
 
+// expand performs a single pass to expand variables and process escapes.
 func (vs *VariableStore) expand(input string, visiting map[string]bool) (string, error) {
 	var result strings.Builder
 	i := 0
 	for i < len(input) {
-		nextSpecial := -1
+		// Find the next special character: '$' or '\'.
 		nextDollar := strings.Index(input[i:], "$")
 		nextBackslash := strings.Index(input[i:], "\\")
 
-		if nextDollar != -1 && (nextBackslash == -1 || nextDollar < nextBackslash) {
+		var nextSpecial int
+		if nextDollar == -1 {
+			nextSpecial = nextBackslash
+		} else if nextBackslash == -1 {
 			nextSpecial = nextDollar
 		} else {
-			nextSpecial = nextBackslash
+			if nextDollar < nextBackslash {
+				nextSpecial = nextDollar
+			} else {
+				nextSpecial = nextBackslash
+			}
 		}
 
+		// If no special characters are left, write the rest and finish.
 		if nextSpecial == -1 {
 			result.WriteString(input[i:])
 			break
 		}
 
+		// Write the text before the special character.
 		result.WriteString(input[i : i+nextSpecial])
 		i += nextSpecial
 
-		char := input[i]
-		if char == '\\' {
+		// Process the special character.
+		switch input[i] {
+		case '\\':
+			// Backslash escape: write the next character literally.
 			if i+1 < len(input) {
 				result.WriteByte(input[i+1])
 				i += 2
 			} else {
-				result.WriteByte('\\')
+				result.WriteByte('\\') // Trailing backslash.
 				i++
 			}
-			continue
-		}
-
-		if i+1 >= len(input) {
-			result.WriteByte('$')
-			i++
-			continue
-		}
-		switch input[i+1] {
 		case '$':
-			result.WriteByte('$')
-			i += 2
-		case '(':
-			start := i + 2
-			balance := 1
-			end := -1
-			for j := start; j < len(input); j++ {
-				if input[j] == '(' {
-					balance++
-				} else if input[j] == ')' {
-					balance--
-					if balance == 0 {
-						end = j
-						break
-					}
-				}
-			}
-			if end == -1 {
-				return "", fmt.Errorf("unmatched parenthesis in variable expression: %s", input[i:])
-			}
-			content := input[start:end]
-			i = end + 1
-
-			var expandedContent string
-			var err error
-
-			functionName := strings.SplitN(content, " ", 2)[0]
-			if _, isUnsupported := unsupportedMakeFunctions[functionName]; isUnsupported {
-				return "", fmt.Errorf(ErrorUnsupportedFunction, functionName)
-			}
-
-			if strings.HasPrefix(content, "shell ") {
-				cmdStr := strings.TrimSpace(content[len("shell"):])
-				expandedCmd, err_expand := vs.expand(cmdStr, visiting)
-				if err_expand != nil {
-					return "", fmt.Errorf("error expanding shell command: %w", err_expand)
-				}
-				expandedContent, err = vs.runShellCmd(expandedCmd)
-			} else if val, ok := vs.Get(content); ok {
-				varName := content
-				if visiting[varName] {
-					return "", fmt.Errorf("circular variable reference detected for '%s'", varName)
-				}
-				visiting[varName] = true
-				expandedContent, err = vs.expand(val, visiting)
-				delete(visiting, varName)
-			} else {
-				expandedCmd, err_expand := vs.expand(content, visiting)
-				if err_expand != nil {
-					return "", fmt.Errorf("error expanding implicit shell command: %w", err_expand)
-				}
-				expandedContent, err = vs.runShellCmd(expandedCmd)
-			}
-
-			if err != nil {
-				return "", err
-			}
-			result.WriteString(expandedContent)
-		default:
-			re := regexp.MustCompile(`^[a-zA-Z0-9_]+`)
-			varName := re.FindString(input[i+1:])
-			if varName == "" {
+			// Dollar sign: handle variable expansion.
+			if i+1 >= len(input) {
 				result.WriteByte('$')
 				i++
 				continue
 			}
-			i += 1 + len(varName)
-			if visiting[varName] {
-				return "", fmt.Errorf("circular variable reference detected for '%s'", varName)
-			}
-			visiting[varName] = true
-			val, ok := vs.Get(varName)
-			if ok {
-				expandedVal, err := vs.expand(val, visiting)
+			switch input[i+1] {
+			case '$':
+				result.WriteByte('$')
+				i += 2
+			case '(':
+				start := i + 2
+				balance := 1
+				end := -1
+				for j := start; j < len(input); j++ {
+					if input[j] == '(' {
+						balance++
+					} else if input[j] == ')' {
+						balance--
+						if balance == 0 {
+							end = j
+							break
+						}
+					}
+				}
+				if end == -1 {
+					return "", fmt.Errorf("unmatched parenthesis in variable expression: %s", input[i:])
+				}
+				content := input[start:end]
+				i = end + 1
+
+				var expandedContent string
+				var err error
+				if strings.HasPrefix(content, "shell ") {
+					cmdStr := strings.TrimSpace(content[len("shell"):])
+					expandedCmd, err_expand := vs.expand(cmdStr, visiting)
+					if err_expand != nil {
+						return "", fmt.Errorf("error expanding shell command: %w", err_expand)
+					}
+					expandedContent, err = vs.runShellCmd(expandedCmd)
+				} else if val, ok := vs.Get(content); ok {
+					varName := content
+					if visiting[varName] {
+						return "", fmt.Errorf("circular variable reference detected for '%s'", varName)
+					}
+					visiting[varName] = true
+					expandedContent, err = vs.expand(val, visiting)
+					delete(visiting, varName)
+				} else {
+					expandedCmd, err_expand := vs.expand(content, visiting)
+					if err_expand != nil {
+						return "", fmt.Errorf("error expanding implicit shell command: %w", err_expand)
+					}
+					expandedContent, err = vs.runShellCmd(expandedCmd)
+				}
 				if err != nil {
 					return "", err
 				}
-				result.WriteString(expandedVal)
+				result.WriteString(expandedContent)
+			default:
+				re := regexp.MustCompile(`^[a-zA-Z0-9_]+`)
+				varName := re.FindString(input[i+1:])
+				if varName == "" {
+					result.WriteByte('$')
+					i++
+					continue
+				}
+				i += 1 + len(varName)
+				if visiting[varName] {
+					return "", fmt.Errorf("circular variable reference detected for '%s'", varName)
+				}
+				visiting[varName] = true
+				val, ok := vs.Get(varName)
+				if ok {
+					expandedVal, err := vs.expand(val, visiting)
+					if err != nil {
+						return "", err
+					}
+					result.WriteString(expandedVal)
+				}
+				delete(visiting, varName)
 			}
-			delete(visiting, varName)
 		}
 	}
 	return result.String(), nil
@@ -257,11 +237,16 @@ func (vs *VariableStore) Expand(input string) (string, error) {
 }
 
 func (vs *VariableStore) getEnvironment() []string {
+	if vs.cachedEnv != nil {
+		return vs.cachedEnv
+	}
+
 	if vs.isExpandingForEnv {
 		return os.Environ()
 	}
 	vs.isExpandingForEnv = true
 	defer func() { vs.isExpandingForEnv = false }()
+
 	envMap := make(map[string]string)
 	for _, pair := range os.Environ() {
 		parts := strings.SplitN(pair, "=", 2)
@@ -286,5 +271,7 @@ func (vs *VariableStore) getEnvironment() []string {
 	for k, v := range envMap {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
+
+	vs.cachedEnv = env // Cache the result.
 	return env
 }
