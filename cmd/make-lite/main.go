@@ -22,7 +22,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	isDebug := os.Getenv("LOG_LEVEL") == "DEBUG"
+	isDebug := os.Getenv("MAKE_LITE_LOG_LEVEL") == "DEBUG"
 	vars := NewVariableStore(isDebug)
 	parser := NewParser(vars)
 

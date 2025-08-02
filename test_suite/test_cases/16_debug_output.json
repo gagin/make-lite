@@ -1,22 +1,28 @@
 {
-  "name": "LOG_LEVEL=DEBUG enables verbose output",
+  "name": "LOG_LEVEL=DEBUG enables verbose output and env caching",
   "command": "all",
   "env_vars": {
-    "LOG_LEVEL": "DEBUG"
+    "MAKE_LITE_LOG_LEVEL": "DEBUG"
   },
   "files": [
     {
       "path": "Makefile.mk-lite",
-      "content": "VAR = $(shell echo 'shell output')\nall:\n\t@echo \"Recipe says: $(VAR)\""
+      "content": "# This variable is expensive to compute and should only be expanded once\n# when the environment for sub-shells is first created and cached.\nEXPENSIVE_VAR = $(shell echo 'running expensive calculation')\n\n# This variable depends on the expensive one to ensure it's part of env expansion.\nUNRELATED_VAR = $(EXPENSIVE_VAR)\n\nall:\n\t# This first shell command triggers the creation of the cached environment.\n\t# During this, EXPENSIVE_VAR will be expanded exactly once.\n\t@echo \"First shell says: $(shell echo 'first')\"\n\n\t# This second shell command should REUSE the cached environment.\n\t# The 'expensive calculation' should NOT be run again.\n\t@echo \"Second shell says: $(shell echo 'second')\""
     }
   ],
   "checks": {
     "exit_code": 0,
-    "stdout_contains": ["Recipe says: shell output"],
+    "stdout_contains": [
+      "First shell says: first",
+      "Second shell says: second"
+    ],
     "stderr_contains": [
-      "DEBUG: executing shell command: [echo 'shell output']",
-      "DEBUG: shell stdout: [shell output]",
-      "DEBUG: executing recipe command: [@echo \"Recipe says: shell output\"]"
+      "DEBUG: executing shell command: [echo 'running expensive calculation']",
+      "DEBUG: executing shell command: [echo 'first']",
+      "DEBUG: executing shell command: [echo 'second']"
+    ],
+    "stderr_does_not_contain": [
+        "DEBUG: shell command (cached):"
     ]
   }
 }

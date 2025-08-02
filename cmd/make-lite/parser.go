@@ -49,6 +49,9 @@ func (p *Parser) processFile(absPath string) (lines []string, err error) {
 
 	file, err := os.Open(absPath)
 	if err != nil {
+		if os.IsNotExist(err) && strings.HasSuffix(absPath, ".env") {
+			return nil, nil // Silently ignore missing .env files
+		}
 		return nil, fmt.Errorf("could not open makefile %s: %w", absPath, err)
 	}
 	defer func() {
@@ -146,25 +149,6 @@ func splitOnUnescaped(s string, sep rune) (string, string, bool) {
 	return s, "", false
 }
 
-// unescapeString universally removes backslashes from escape sequences.
-func unescapeString(s string) string {
-	var b strings.Builder
-	isEscaped := false
-	for _, r := range s {
-		if isEscaped {
-			b.WriteRune(r)
-			isEscaped = false
-			continue
-		}
-		if r == '\\' {
-			isEscaped = true
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return b.String()
-}
-
 // joinContinuations processes lines, joining those ending in an unescaped backslash.
 func (p *Parser) joinContinuations(lines []string) string {
 	var builder strings.Builder
@@ -205,18 +189,17 @@ func (p *Parser) parseContent(content string) (*Makefile, error) {
 				return nil, fmt.Errorf("invalid rule with multiple colons on line %d: \"%s\"", i+1, trimmedLine)
 			}
 
-			// Expand variables in targets and sources at parse time.
-			expandedLeft, err := p.variableStore.Expand(left)
+			expandedLeft, err := p.variableStore.Expand(left, true)
 			if err != nil {
 				return nil, fmt.Errorf("on line %d: error expanding targets: %w", i+1, err)
 			}
-			expandedRight, err := p.variableStore.Expand(right)
+			expandedRight, err := p.variableStore.Expand(right, true)
 			if err != nil {
 				return nil, fmt.Errorf("on line %d: error expanding sources: %w", i+1, err)
 			}
 
-			targets := strings.Fields(unescapeString(expandedLeft))
-			sources := strings.Fields(unescapeString(expandedRight))
+			targets := strings.Fields(expandedLeft)
+			sources := strings.Fields(expandedRight)
 			if len(targets) == 0 {
 				return nil, fmt.Errorf("rule with no target on line %d: \"%s\"", i+1, trimmedLine)
 			}
@@ -251,7 +234,12 @@ func (p *Parser) parseContent(content string) (*Makefile, error) {
 				return nil, fmt.Errorf("invalid assignment with no variable name on line %d: \"%s\"", i+1, trimmedLine)
 			}
 			varName := keyTokens[len(keyTokens)-1]
-			value := strings.TrimSpace(right)
+
+			value, err := p.variableStore.Expand(strings.TrimSpace(right), true)
+			if err != nil {
+				return nil, fmt.Errorf("on line %d: error expanding variable value: %w", i+1, err)
+			}
+
 			source := sourceMakefileUnconditional
 			if op == "?=" {
 				source = sourceMakefileConditional

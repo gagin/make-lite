@@ -36,3 +36,39 @@ const (
 	DebugShellStdout            = "DEBUG: shell stdout: [%s]\n"
 	DebugShellStderr            = "DEBUG: shell stderr: [%s]\n"
 )
+
+// --- Parser Configuration ---
+
+// unsupportedMakeFunctions is a set of common GNU Make functions that make-lite
+// explicitly does not support. Attempting to use them will result in an error.
+var unsupportedMakeFunctions = map[string]struct{}{
+	"subst":      {},
+	"patsubst":   {},
+	"strip":      {},
+	"findstring": {},
+	"filter":     {},
+	"filter-out": {},
+	"sort":       {},
+	"word":       {},
+	"words":      {},
+	"wordlist":   {},
+	"firstword":  {},
+	"lastword":   {},
+	"dir":        {},
+	"notdir":     {},
+	"suffix":     {},
+	"basename":   {},
+	"addsuffix":  {},
+	"addprefix":  {},
+	"join":       {},
+	"foreach":    {},
+	"if":         {},
+	"or":         {},
+	"and":        {},
+	"call":       {},
+	"origin":     {},
+	"value":      {},
+	"info":       {},
+	"warning":    {},
+	"error":      {},
+}

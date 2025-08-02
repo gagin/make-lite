@@ -38,7 +38,7 @@ func NewEngine(mf *Makefile, vs *VariableStore, isDebug bool) (*Engine, error) {
 
 // Build is the main entry point to start building a target.
 func (e *Engine) Build(targetName string) error {
-	expandedTarget, err := e.vars.Expand(targetName)
+	expandedTarget, err := e.vars.Expand(targetName, true)
 	if err != nil {
 		return fmt.Errorf("failed to expand target name '%s': %w", targetName, err)
 	}
@@ -60,22 +60,15 @@ func (e *Engine) buildRecursive(targetName string) error {
 	if !exists {
 		info, err := os.Stat(targetName)
 		if err == nil && !info.IsDir() {
-			// If the file exists and has no rule, it's considered built.
 			e.built[targetName] = true
 			return nil
 		}
-		// If the file doesn't exist and there's no rule, it's an error.
-		// If it's a directory without a rule, we also don't know how to "make" it.
 		return fmt.Errorf("don't know how to make target '%s'", targetName)
 	}
 
 	for _, sourceName := range rule.Sources {
-		expandedSource, err := e.vars.Expand(sourceName)
-		if err != nil {
-			return fmt.Errorf("failed to expand source name '%s' for target '%s': %w", sourceName, targetName, err)
-		}
-		// A single source can expand to a list of files.
-		sourceFiles := strings.Fields(expandedSource)
+		// sourceName is already expanded by the parser
+		sourceFiles := strings.Fields(sourceName)
 		for _, sourceFile := range sourceFiles {
 			if err := e.buildRecursive(sourceFile); err != nil {
 				return err
@@ -97,11 +90,9 @@ func (e *Engine) buildRecursive(targetName string) error {
 			}
 		}
 		if err := e.executeRecipe(rule); err != nil {
-			// New, more informative error format.
 			return fmt.Errorf("recipe for target '%s' failed: %w", targetName, err)
 		}
 	} else {
-		// Only show "up to date" messages in debug mode, and show them for the whole target group.
 		if e.isDebug {
 			targetList := strings.Join(rule.Targets, "', '")
 			fmt.Printf(StatusTargetsUpToDate, targetList)
@@ -109,13 +100,7 @@ func (e *Engine) buildRecursive(targetName string) error {
 	}
 
 	for _, t := range rule.Targets {
-		// Mark all targets of the rule as built after execution.
-		// This prevents duplicate "up to date" messages for the same rule.
-		expandedTarget, err := e.vars.Expand(t)
-		if err != nil {
-			return fmt.Errorf("failed to expand target name '%s': %w", t, err)
-		}
-		e.built[expandedTarget] = true
+		e.built[t] = true
 	}
 	return nil
 }
@@ -126,24 +111,20 @@ func (e *Engine) checkFreshness(rule *Rule) (bool, string, error) {
 	var isPhony bool
 
 	if len(rule.Targets) == 0 {
-		return true, "it has no targets", nil // Should always run if there are no targets to check.
+		return true, "it has no targets", nil
 	}
 
-	// 1. Check if any target is missing or is a directory (phony).
 	for _, targetName := range rule.Targets {
-		expandedTarget, err := e.vars.Expand(targetName)
-		if err != nil {
-			return false, "", err
-		}
-		info, err := os.Stat(expandedTarget)
+		// targetName is already expanded by parser
+		info, err := os.Stat(targetName)
 		if err != nil {
 			if os.IsNotExist(err) {
-				return true, "", nil // Build quietly if target file is missing.
+				return true, "", nil
 			}
-			return false, "", fmt.Errorf("failed to stat target '%s': %w", expandedTarget, err)
+			return false, "", fmt.Errorf("failed to stat target '%s': %w", targetName, err)
 		}
 		if info.IsDir() {
-			isPhony = true // Target is a directory, treat as phony.
+			isPhony = true
 			break
 		}
 		if oldestTargetModTime.IsZero() || info.ModTime().Before(oldestTargetModTime) {
@@ -152,31 +133,24 @@ func (e *Engine) checkFreshness(rule *Rule) (bool, string, error) {
 	}
 
 	if isPhony || (len(rule.Sources) == 0 && oldestTargetModTime.IsZero()) {
-		// A directory target, or a target with no sources and no corresponding file, is phony.
 		return true, "it is a symbolic target", nil
 	}
 
-	// 2. A rule with existing file targets but no sources is considered up-to-date.
 	if len(rule.Sources) == 0 {
 		return false, "", nil
 	}
 
-	// 3. Timestamp check: if ANY source is newer than the OLDEST target.
 	for _, sourceName := range rule.Sources {
-		expandedSource, err := e.vars.Expand(sourceName)
-		if err != nil {
-			return false, "", err
-		}
-		info, err := os.Stat(expandedSource)
+		// sourceName is already expanded by parser
+		info, err := os.Stat(sourceName)
 		if err != nil {
 			if os.IsNotExist(err) {
-				// Fatal error: A dependency is missing and there's no rule to make it.
-				return false, "", fmt.Errorf(ErrorMissingDependency, expandedSource, rule.Targets[0])
+				return false, "", fmt.Errorf(ErrorMissingDependency, sourceName, rule.Targets[0])
 			}
-			return false, "", err // Other stat error.
+			return false, "", err
 		}
 		if info.ModTime().After(oldestTargetModTime) {
-			return true, fmt.Sprintf("source '%s' is newer", expandedSource), nil
+			return true, fmt.Sprintf("source '%s' is newer", sourceName), nil
 		}
 	}
 
@@ -186,11 +160,8 @@ func (e *Engine) checkFreshness(rule *Rule) (bool, string, error) {
 // executeRecipe runs the commands for a given rule.
 func (e *Engine) executeRecipe(rule *Rule) error {
 	for _, targetName := range rule.Targets {
-		expandedTarget, err := e.vars.Expand(targetName)
-		if err != nil {
-			return fmt.Errorf("failed to expand target name for directory creation '%s': %w", targetName, err)
-		}
-		dir := filepath.Dir(expandedTarget)
+		// targetName is already expanded
+		dir := filepath.Dir(targetName)
 		if dir != "." && dir != "/" && dir != "" {
 			if err := os.MkdirAll(dir, 0755); err != nil {
 				return fmt.Errorf("failed to create directory %s: %w", dir, err)
@@ -211,7 +182,7 @@ func (e *Engine) executeRecipe(rule *Rule) error {
 			commandToExecute = commandToExecute[:atIndex] + commandToExecute[atIndex+1:]
 		}
 
-		expandedCmd, err := e.vars.Expand(commandToExecute)
+		expandedCmd, err := e.vars.Expand(commandToExecute, false)
 		if err != nil {
 			return fmt.Errorf("error expanding command '%s': %w", cmdLine, err)
 		}
@@ -230,7 +201,6 @@ func (e *Engine) executeRecipe(rule *Rule) error {
 		cmd.Stderr = os.Stderr
 
 		if err := cmd.Run(); err != nil {
-			// Return the raw error from the shell command. The caller will add context.
 			return err
 		}
 	}

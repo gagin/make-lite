@@ -10,9 +10,7 @@ A simple, predictable build tool that fixes the most common annoyances of GNU Ma
 
 If you love the core dependency-graph concept of Make but are tired of `.PHONY`, tab errors, and confusing variable expansion rules, `make-lite` is for you.
 
-### Core Features
-
-`make-lite` directly addresses the most common and frustrating aspects of GNU Make with a set of simple, predictable design choices.
+## Core Features
 
 -   **Intuitive Dependency Rules (The Core Fix)**  
     This is the most important feature. A rule runs if **any** of its target files are missing, or if **any** source file is newer than **any** target file. This elegant logic solves multiple GNU Make frustrations at once:
@@ -47,6 +45,8 @@ If you love the core dependency-graph concept of Make but are tired of `.PHONY`,
 -   **Assignments**:
     -   `VAR = value`: Unconditional assignment.
     -   `VAR ?= value`: Conditional assignment (only sets if `VAR` is not already defined).
+-   **Expansion Model: Eager by Default**:
+    `make-lite` has a single, simple expansion model: all variable assignments are expanded **eagerly** at the time they are parsed. The right-hand side is fully resolved (including any `$(shell ...)` calls), and the resulting literal string is stored. This is equivalent to GNU Make's `:=` operator and ensures a variable's value is fixed and predictable throughout the build.
 -   **Precedence (Highest to Lowest)**:
     1.  **Makefile Unconditional (`=`)**: Has the final say.
     2.  **Environment Variables**: Includes variables from `export` or command-line prefixes (e.g., `VAR=val make-lite`).
@@ -62,7 +62,30 @@ If you love the core dependency-graph concept of Make but are tired of `.PHONY`,
     2.  **`$(VAR)`**: If `VAR` is a defined `make-lite` variable, it is expanded.
     3.  **`$(command)`**: If `command` is *not* a defined `make-lite` variable, it is treated as an implicit shell command, executed, and its output is substituted.
 
-#### 3. Dependency Management
+#### 3. Recursive Calls & The Environment
+
+When `make-lite` is called from within a recipe (e.g., `make-lite clean`), it is a new process. This new process inherits its environment from the recipe's shell, **not** from the original `make-lite` process that launched the recipe.
+
+This means that any variables modified within the recipe's command line will be seen by the recursive call.
+
+**Example:**
+```makefile
+VAR = original
+all:
+	@echo "Top level sees: $(VAR)"
+	VAR=changed make-lite inner
+
+inner:
+	@echo "Inner level sees: $(VAR)"
+```
+Output:
+```
+Top level sees: original
+Inner level sees: changed
+```
+This is the correct and expected behavior, but it's important to be aware of when writing complex recursive Makefiles.
+
+#### 4. Dependency Management
 
 -   A rule's recipe runs if **any** of its targets don't exist, or if **any** of its sources are newer than the **oldest** target.
 -   If a dependency is missing from the filesystem and there is no rule to create it, `make-lite` exits with a fatal error.
@@ -171,6 +194,7 @@ Migrating simple Makefiles is straightforward.
 #### Key Differences & Unsupported Features
 
 -   **Flexible Recipe Indentation**: Like GNU Make, recipe lines must be indented to be part of a recipe. The crucial difference is that `make-lite` allows **any whitespace indentation (one or more spaces or tabs)**. This completely eliminates GNU Make's strict 'tab-only' rule and the infamous 'missing separator' errors it causes.
+-   **No Deferred Expansion (`=`):** `make-lite`'s `=` operator is always **eagerly expanded** (like GNU Make's `:=`). There is no equivalent to GNU Make's deferred (`=`) operator or target-specific variables. This is a deliberate design choice to eliminate the complexity and "workaround" feel of variables that change their value depending on the context. Recipes should be explicit and self-contained.
 -   **Variable Precedence**: In `make-lite`, a Makefile assignment (`=`) **always** wins over an environment variable. Use `?=` in your Makefile to allow environment variables to take precedence.
 -   **Unsupported Functions**: Complex GNU Make functions are not supported and will cause a fatal error. This includes `patsubst`, `foreach`, `if`, `call`, etc. These must be rewritten using `$(shell ...)` or simpler logic.
 -   **No Automatic Variables**: Special variables like `$@` (target), `$<` (first dependency), and `$^` (all dependencies) are not supported. You must use the explicit names in your recipes.
@@ -185,13 +209,14 @@ You can use a capable LLM (like GPT-4, Claude 3, etc.) to automate much of the c
 
 **Prompt for LLM-based Makefile Conversion**
 
+
 ```
 You are an expert build system engineer specializing in migrating projects from GNU Make to simpler, more modern alternatives. Your task is to analyze the provided GNU Makefile and convert it into the `make-lite` format.
 
 First, understand the core principles of `make-lite`, which differ from GNU Make:
 -   **Premise:** `make-lite` is a simple, predictable command runner that fixes common Make annoyances. It is a single-pass, sequential interpreter.
 -   **What is Supported:** Basic rules (`target: deps`), `VAR = value`, `VAR ?= value`, `$(shell ...)` and implicit shell fallbacks `$(command)`, multi-target rules, `$$` for shell passthrough, `load_env`, `include`.
--   **What is NOT Supported:** Deferred assignment `:=`, `.DEFAULT_GOAL`, automatic variables (`$@`, `$<`, `$^`), complex functions (`patsubst`, `foreach`, `wildcard`, etc.), command-line variable overrides (`make VAR=value`).
+-   **What is NOT Supported:** Deferred assignment (`=`), `.DEFAULT_GOAL`, automatic variables (`$@`, `$<`, `$^`), complex functions (`patsubst`, `foreach`, `wildcard`, etc.), command-line variable overrides (`make VAR=value`).
 
 Follow these conversion rules precisely:
 
@@ -203,7 +228,7 @@ Follow these conversion rules precisely:
 **2. Simplify Directives & Syntax:**
 -   **Indentation:** Ensure every recipe line is indented. Any whitespace (tabs or spaces) is acceptable.
 -   **Environment Files:** Replace conditional `include .env` logic (e.g., `ifneq (,$(wildcard ./.env))`) with a single `load_env .env` directive.
--   **Assignments:** Change `:=` to `=`.
+-   **Assignments:** Convert both GNU Make's simple `:=` and deferred `=` assignments to `make-lite`'s standard `=` operator. Because `make-lite` uses eager expansion, you may need to refactor rules that depend on deferred expansion.
 -   **Recursive Calls:** Replace `$(MAKE)` or `make` with `make-lite`.
 
 **3. Remove Boilerplate & GNU Make Workarounds:**
@@ -221,6 +246,7 @@ Convert the following GNU Makefile to `make-lite` format.
 
 **GNU Makefile Input:**
 ```
+
 ---
 
 ## Installation
@@ -249,8 +275,8 @@ Options:
 
 -   **Default Makefile**: `Makefile.mk-lite`
 -   **Default Target**: The first rule defined in the Makefile.
--   **Debugging**: Set `LOG_LEVEL=DEBUG` to see verbose output, including the exact commands being sent to the shell.
+-   **Debugging**: Set the environment variable `MAKE_LITE_LOG_LEVEL=DEBUG` to see verbose output, including the exact commands being sent to the shell.
 
 ```bash
-LOG_LEVEL=DEBUG make-lite
+MAKE_LITE_LOG_LEVEL=DEBUG make-lite
 ```

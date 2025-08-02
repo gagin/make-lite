@@ -46,21 +46,16 @@ func NewVariableStore(isDebug bool) *VariableStore {
 }
 
 func (vs *VariableStore) Set(key, value string, source varSource) {
-	// Invalidate the environment cache whenever a variable is set.
-	vs.cachedEnv = nil
-
+	vs.cachedEnv = nil // Invalidate env cache on any variable change.
 	existing, exists := vs.vars[key]
 
-	// Conditional assignment `?=` only ever sets if the variable does not exist.
 	if source == sourceMakefileConditional {
 		if !exists {
 			vs.vars[key] = varEntry{value: value, source: source}
 		}
-		return // A conditional assignment never overwrites.
+		return
 	}
 
-	// For unconditional `=`, `load_env`, and shell env, set if the new
-	// source has higher or equal precedence.
 	if !exists || source >= existing.source {
 		vs.vars[key] = varEntry{value: value, source: source}
 	}
@@ -76,8 +71,9 @@ func (vs *VariableStore) Get(key string) (string, bool) {
 
 func (vs *VariableStore) runShellCmd(command string) (string, error) {
 	if vs.isExpandingForEnv {
-		return "", nil // Prevent recursive shell execution.
+		return "", nil
 	}
+
 	if vs.isDebug {
 		fmt.Fprintf(os.Stderr, DebugShellCommand, command)
 	}
@@ -98,54 +94,27 @@ func (vs *VariableStore) runShellCmd(command string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("shell command '%s' failed: %w\nstderr: %s", command, err, stderr.String())
 	}
+
 	return strings.TrimRight(stdout.String(), "\n\r"), nil
 }
 
-// expand performs a single pass to expand variables and process escapes.
-func (vs *VariableStore) expand(input string, visiting map[string]bool) (string, error) {
+func (vs *VariableStore) expand(input string, unescape bool, visiting map[string]bool) (string, error) {
 	var result strings.Builder
 	i := 0
 	for i < len(input) {
-		// Find the next special character: '$' or '\'.
-		nextDollar := strings.Index(input[i:], "$")
-		nextBackslash := strings.Index(input[i:], "\\")
-
-		var nextSpecial int
-		if nextDollar == -1 {
-			nextSpecial = nextBackslash
-		} else if nextBackslash == -1 {
-			nextSpecial = nextDollar
-		} else {
-			if nextDollar < nextBackslash {
-				nextSpecial = nextDollar
-			} else {
-				nextSpecial = nextBackslash
-			}
-		}
-
-		// If no special characters are left, write the rest and finish.
-		if nextSpecial == -1 {
-			result.WriteString(input[i:])
-			break
-		}
-
-		// Write the text before the special character.
-		result.WriteString(input[i : i+nextSpecial])
-		i += nextSpecial
-
-		// Process the special character.
-		switch input[i] {
-		case '\\':
-			// Backslash escape: write the next character literally.
+		char := input[i]
+		if unescape && char == '\\' {
 			if i+1 < len(input) {
 				result.WriteByte(input[i+1])
 				i += 2
 			} else {
-				result.WriteByte('\\') // Trailing backslash.
+				result.WriteByte('\\')
 				i++
 			}
-		case '$':
-			// Dollar sign: handle variable expansion.
+			continue
+		}
+
+		if char == '$' {
 			if i+1 >= len(input) {
 				result.WriteByte('$')
 				i++
@@ -176,34 +145,30 @@ func (vs *VariableStore) expand(input string, visiting map[string]bool) (string,
 				content := input[start:end]
 				i = end + 1
 
-				var expandedContent string
-				var err error
-				if strings.HasPrefix(content, "shell ") {
-					cmdStr := strings.TrimSpace(content[len("shell"):])
-					expandedCmd, err_expand := vs.expand(cmdStr, visiting)
-					if err_expand != nil {
-						return "", fmt.Errorf("error expanding shell command: %w", err_expand)
-					}
-					expandedContent, err = vs.runShellCmd(expandedCmd)
-				} else if val, ok := vs.Get(content); ok {
-					varName := content
-					if visiting[varName] {
-						return "", fmt.Errorf("circular variable reference detected for '%s'", varName)
-					}
-					visiting[varName] = true
-					expandedContent, err = vs.expand(val, visiting)
-					delete(visiting, varName)
-				} else {
-					expandedCmd, err_expand := vs.expand(content, visiting)
-					if err_expand != nil {
-						return "", fmt.Errorf("error expanding implicit shell command: %w", err_expand)
-					}
-					expandedContent, err = vs.runShellCmd(expandedCmd)
-				}
+				expandedContent, err := vs.expand(content, true, visiting)
 				if err != nil {
 					return "", err
 				}
-				result.WriteString(expandedContent)
+
+				var finalValue string
+				functionName := strings.SplitN(expandedContent, " ", 2)[0]
+				if _, isUnsupported := unsupportedMakeFunctions[functionName]; isUnsupported {
+					return "", fmt.Errorf(ErrorUnsupportedFunction, functionName)
+				}
+
+				if strings.HasPrefix(expandedContent, "shell ") {
+					cmdStr := strings.TrimSpace(expandedContent[len("shell"):])
+					finalValue, err = vs.runShellCmd(cmdStr)
+				} else if val, ok := vs.Get(expandedContent); ok {
+					finalValue = val
+				} else {
+					finalValue, err = vs.runShellCmd(expandedContent)
+				}
+
+				if err != nil {
+					return "", err
+				}
+				result.WriteString(finalValue)
 			default:
 				re := regexp.MustCompile(`^[a-zA-Z0-9_]+`)
 				varName := re.FindString(input[i+1:])
@@ -216,37 +181,31 @@ func (vs *VariableStore) expand(input string, visiting map[string]bool) (string,
 				if visiting[varName] {
 					return "", fmt.Errorf("circular variable reference detected for '%s'", varName)
 				}
-				visiting[varName] = true
-				val, ok := vs.Get(varName)
-				if ok {
-					expandedVal, err := vs.expand(val, visiting)
-					if err != nil {
-						return "", err
-					}
-					result.WriteString(expandedVal)
+				if val, ok := vs.Get(varName); ok {
+					result.WriteString(val)
 				}
-				delete(visiting, varName)
 			}
+		} else {
+			result.WriteByte(char)
+			i++
 		}
 	}
 	return result.String(), nil
 }
 
-func (vs *VariableStore) Expand(input string) (string, error) {
-	return vs.expand(input, make(map[string]bool))
+func (vs *VariableStore) Expand(input string, unescape bool) (string, error) {
+	return vs.expand(input, unescape, make(map[string]bool))
 }
 
 func (vs *VariableStore) getEnvironment() []string {
 	if vs.cachedEnv != nil {
 		return vs.cachedEnv
 	}
-
 	if vs.isExpandingForEnv {
 		return os.Environ()
 	}
 	vs.isExpandingForEnv = true
 	defer func() { vs.isExpandingForEnv = false }()
-
 	envMap := make(map[string]string)
 	for _, pair := range os.Environ() {
 		parts := strings.SplitN(pair, "=", 2)
@@ -256,22 +215,13 @@ func (vs *VariableStore) getEnvironment() []string {
 	}
 	for key, varEntry := range vs.vars {
 		if varEntry.source != sourceShellEnv {
-			expandedVal, err := vs.Expand(varEntry.value)
-			if err != nil {
-				if vs.isDebug {
-					fmt.Fprintf(os.Stderr, "DEBUG: error expanding env var '%s', using raw value: %v\n", key, err)
-				}
-				envMap[key] = varEntry.value
-			} else {
-				envMap[key] = expandedVal
-			}
+			envMap[key] = varEntry.value
 		}
 	}
 	env := make([]string, 0, len(envMap))
 	for k, v := range envMap {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
-
-	vs.cachedEnv = env // Cache the result.
+	vs.cachedEnv = env
 	return env
 }

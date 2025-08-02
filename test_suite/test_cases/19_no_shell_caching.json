@@ -1,0 +1,21 @@
+{
+  "name": "Shell commands are not cached across different expansion contexts",
+  "command": "verify",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "# This variable is expanded before the 'create_file' target runs.\nCHECK_CMD = if [ -f stamp.txt ]; then echo \"File Found\"; else echo \"File Missing\"; fi\nINITIAL_CHECK = $(shell $(CHECK_CMD))\n\nall: verify\n\n# This target creates the file.\ncreate_file:\n\t@echo \"Creating stamp.txt...\"\n\t@touch stamp.txt\n\n# This target runs *after* the file is created.\n# It re-evaluates the same shell command, which must not use a stale result.\nverify: create_file\n\t@echo \"Initial state was: $(INITIAL_CHECK)\"\n\t@echo \"Final state is: $(shell $(CHECK_CMD))\""
+    }
+  ],
+  "checks": {
+    "exit_code": 0,
+    "stdout_contains": [
+      "Creating stamp.txt...",
+      "Initial state was: File Missing",
+      "Final state is: File Found"
+    ],
+    "file_exists": [
+      "stamp.txt"
+    ]
+  }
+}
