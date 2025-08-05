@@ -1,7 +1,7 @@
 # Product Requirements Document: `make-lite`
 
-**Document Version:** 1.1
-**Date:** August 1, 2025
+**Document Version:** 1.2
+**Date:** August 4, 2025
 **Author:** Alex Gaggin
 
 ---
@@ -20,6 +20,7 @@
     -   **Implicit Phony Targets**: Any target that does not correspond to an existing file on disk is automatically treated as "phony," removing the need for `.PHONY` declarations.
     -   **Practical `.env` Parsing**: When a `.env` file is loaded, values enclosed in quotes have those quotes stripped, which is the behavior users almost always want.
     -   **Proactive Error Handling**: Common but unsupported GNU Make functions (e.g., `patsubst`, `foreach`) are detected and result in a clear error message, preventing silent failures.
+    -   **Precise, Actionable Feedback**: All error and warning messages must report the exact file and line number of the issue. Warnings for common pitfalls, like variable redefinition, must be provided to help users debug their Makefiles.
 
 -   **Transparent Execution Model**: The core logic of the build—what gets built and why—is always explicit in the makefile. At its core, `make-lite` is a powerful **macro and command runner**, not a complex build system with hidden behaviors.
     -   **Simple, Eager Expansion**: Variables are expanded in a single, predictable pass before a recipe command is run. There is no complex deferred expansion (`:=` vs. `=`) that can alter a variable's value unexpectedly during the build.
@@ -48,13 +49,15 @@ The makefile is processed into a single, clean in-memory buffer before execution
 4.  **Line Continuations**:
     -   **Rule**: After inclusion, any line ending in an unescaped backslash (`\`) is joined with the subsequent line. The backslash and newline are removed.
 
-### 2.2 Global Structure
+### 2.2 Global Structure & Two-Pass Parsing
 
-`make-lite` processes the makefile as a simple, top-to-bottom script.
+`make-lite` employs a **two-pass parser** to ensure predictable behavior and eliminate ordering problems.
 
--   **Sequential Evaluation**: Lines are parsed and evaluated in the order they appear. Variable assignments take effect immediately and are available to subsequent lines.
--   **Rule Definition**: Any **non-indented line that contains an unescaped colon (`:`)** is a **rule definition**. It consists of one or more whitespace-separated **targets** to the left of the colon, and zero or more **sources** to the right.
--   **Error Condition**: A rule definition line containing more than one unescaped colon is a fatal error.
+-   **Pass 1: Variable and Rule Collection**: The parser iterates through the entire pre-processed file content.
+    -   **Variable assignments** are processed immediately. The right-hand side is eagerly expanded, and the variable is set in the store. If a variable is assigned multiple times, the **last definition wins**.
+    -   **`load_env` directives** are processed immediately.
+    -   **Rule definitions** and their associated recipes are collected in a raw, unexpanded form.
+-   **Pass 2: Rule Expansion**: After the first pass is complete and the variable store is fully populated, the parser iterates over the collected raw rules. It now expands the variables in the target and source lists of each rule.
 -   **Recipe**: A line is part of a rule's recipe **if and only if it is indented** (with one or more spaces or tabs). The recipe consists of the contiguous block of indented lines immediately following a rule definition.
 -   **Recipe Termination**: A recipe block is terminated by the **first non-indented line** or by the end of the file. Empty lines that are not indented also terminate the recipe.
 
@@ -71,6 +74,7 @@ The makefile is processed into a single, clean in-memory buffer before execution
     2.  **Shell Environment**: Variables from the command line or parent environment.
     3.  **`load_env` Files**: For project-level environment configuration.
     4.  **Makefile Conditional (`?=`):** Provides sensible defaults. This is the primary mechanism for allowing environment variables to override Makefile defaults.
+-   **Redefinition Warning**: If an unconditional Makefile assignment (`=`) overwrites a previous unconditional Makefile assignment, a warning must be issued to `stderr`. This warning must include the variable name and the file and line number of both the new and previous definitions.
 
 ### 3.2 Expansion Logic
 
@@ -115,7 +119,7 @@ The makefile is processed into a single, clean in-memory buffer before execution
 -   **Flags**:
     -   `--help`, `-h`: Display help message.
     -   `--version`, `-v`: Display program version.
--   **Debugging**: Set the environment variable `LOG_LEVEL=DEBUG` to enable verbose output, including the exact commands being sent to the shell.
+-   **Debugging**: Set the environment variable `MAKE_LITE_LOG_LEVEL=DEBUG` to enable verbose output, including the exact commands being sent to the shell.
 
 ## 6. Coding quality
     -   **Centralized Configuration**: Internal application configuration, such as user-facing strings and version numbers, are centralized for maintainability and consistency.

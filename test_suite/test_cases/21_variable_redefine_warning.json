@@ -1,0 +1,26 @@
+{
+  "name": "Parser: Warns on variable redefinition with correct file locations",
+  "command": "all",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "VAR = first_value\ninclude another.mk\nall:\n\t@echo \"Final value: $(VAR)\""
+    },
+    {
+      "path": "another.mk",
+      "content": "# This file redefines the variable\nVAR = last_value"
+    }
+  ],
+  "checks": {
+    "exit_code": 0,
+    "stdout_contains": [
+      "Final value: last_value"
+    ],
+    "stderr_contains": [
+      "Warning: variable 'VAR' redefined at",
+      "another.mk:2",
+      "Previous definition at",
+      "Makefile.mk-lite:1"
+    ]
+  }
+}

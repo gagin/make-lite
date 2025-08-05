@@ -20,8 +20,10 @@ const (
 )
 
 type varEntry struct {
-	value  string
-	source varSource
+	value      string
+	source     varSource
+	originFile string
+	originLine int
 }
 
 type VariableStore struct {
@@ -39,25 +41,30 @@ func NewVariableStore(isDebug bool) *VariableStore {
 	for _, envPair := range os.Environ() {
 		parts := strings.SplitN(envPair, "=", 2)
 		if len(parts) == 2 && parts[0] != "" {
-			vs.vars[parts[0]] = varEntry{value: parts[1], source: sourceShellEnv}
+			vs.vars[parts[0]] = varEntry{value: parts[1], source: sourceShellEnv, originFile: "shell environment", originLine: 0}
 		}
 	}
 	return vs
 }
 
-func (vs *VariableStore) Set(key, value string, source varSource) {
+func (vs *VariableStore) Set(key, value string, source varSource, originFile string, originLine int) {
 	vs.cachedEnv = nil // Invalidate env cache on any variable change.
 	existing, exists := vs.vars[key]
 
 	if source == sourceMakefileConditional {
 		if !exists {
-			vs.vars[key] = varEntry{value: value, source: source}
+			vs.vars[key] = varEntry{value: value, source: source, originFile: originFile, originLine: originLine}
 		}
 		return
 	}
 
 	if !exists || source >= existing.source {
-		vs.vars[key] = varEntry{value: value, source: source}
+		// This is the "action at a distance" case: an unconditional assignment
+		// in a makefile (`=`) is overwriting a previous one from a makefile.
+		if exists && source == sourceMakefileUnconditional && existing.source == sourceMakefileUnconditional {
+			fmt.Fprintf(os.Stderr, WarningVarRedefined, key, originFile, originLine, existing.originFile, existing.originLine)
+		}
+		vs.vars[key] = varEntry{value: value, source: source, originFile: originFile, originLine: originLine}
 	}
 }
 

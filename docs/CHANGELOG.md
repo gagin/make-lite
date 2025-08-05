@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2024-08-04
+
+### Changed
+
+-   **BREAKING CHANGE:** The core parsing model has been refactored to fix a critical bug where a rule would fail to resolve a variable if it was used as a dependency of another rule defined before the variable's assignment. While an intuitive fix might seem to be processing variables just-in-time, that approach would create ambiguity, causing a rule's behavior to change unexpectedly based on the dependency path that led to it. Instead, the parser has been refactored to a **two-pass model**. This implements a simple, predictable "last definition wins" rule: all variables are processed first, with their final values being used globally. This intentionally trades dynamic flexibility for the simplicity and predictability that are core to the `make-lite` philosophy.
+
+### Added
+
+-   **Usability:** The parser now tracks the original file and line number for all definitions. All error messages and warnings now point to the exact source location, making debugging significantly easier.
+-   **Usability:** `make-lite` now issues a clear warning to `stderr` when a variable is redefined, helping to diagnose "action at a distance" bugs in complex Makefiles. The warning includes the locations of both the old and new definitions.
+
 ## [1.1.1] - 2024-08-02
 
 ### Changed

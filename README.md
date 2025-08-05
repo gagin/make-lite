@@ -30,7 +30,66 @@ If you love the core dependency-graph concept of Make but are tired of `.PHONY`,
     If a rule's target is in a directory that doesn't exist (e.g., `bin/my_app`), `make-lite` will create the parent directory (`bin/`) automatically before running the recipe. No more `mkdir -p` boilerplate.
 
 -   **Practical `.env` Parsing**  
-    When using `load_env .env`, `make-lite` automatically strips surrounding quotes (`"` or `'`) from the values. This is the behavior users almost always want and expect, but have to handle manually in shell scripts.
+    When using `load_env .env`, `make-lite` uses a practical parsing approach that automatically strips surrounding quotes (`"` or `'`) from values, which is the behavior users almost always want.
+
+## Core Principles & Behavior
+
+`make-lite` is designed to be simple and predictable. It achieves this by adhering to a few core principles that differ from GNU Make in key ways. Understanding these principles is essential for using the tool effectively.
+
+### 1. Two-Pass Parser & "Last Definition Wins"
+
+`make-lite` uses a strict **two-pass parser** to ensure predictable behavior.
+
+*   **Pass 1: Variable & Rule Collection:** `make-lite` first reads *all* `include`d Makefiles from top to bottom and populates its variable store. If a variable is defined multiple times, the **last definition wins**. This process is completed before any rules are evaluated.
+*   **Pass 2: Rule Expansion:** After the variable store is complete, `make-lite` expands the variables within the targets and dependencies of each rule.
+
+This means the order of variable definitions matters, but the location of a rule relative to its variable definitions does not.
+
+**Example:**
+```makefile
+# File: Makefile.mk-lite
+VAR = first
+include extra.mk
+all:
+	@echo "The value is: $(VAR)"
+```
+```makefile
+# File: extra.mk
+VAR = last
+```
+Running `make-lite` will output `The value is: last`, because the definition in `extra.mk` was the last one processed during the first pass.
+
+### 2. Eager Variable Expansion (like `:=`)
+
+`make-lite` uses **eager expansion** for all standard variable assignments (`=`). The right-hand side of an assignment is evaluated *once*, at the moment it is defined during the first parsing pass. The resulting literal string is then stored.
+
+This is equivalent to GNU Make's `:=` operator and is a core part of `make-lite`'s "simple and predictable" philosophy. It means a variable's value is fixed before any recipes are run and will not change during execution.
+
+**Example:**
+```makefile
+# The `shell date` command is run only once, during parsing.
+TIMESTAMP = $(shell date)
+
+all:
+	@sleep 2
+	@echo "Timestamp from parse time: $(TIMESTAMP)"
+	@echo "Timestamp from execution time: $(shell date)"
+```
+The output will show two different timestamps, demonstrating that `$(TIMESTAMP)` stored the value from when the file was first parsed, not when the recipe was executed.
+
+### 3. Clear Warnings and Precise Errors
+
+To make debugging easy and prevent silent "action at a distance" errors, `make-lite` provides clear feedback:
+
+*   **Variable Redefinition Warnings:** If you define a variable that has already been defined in another makefile context, `make-lite` will print a clear warning to `stderr`, showing you the exact file and line number of both the new and previous definitions. This helps you track down unintended overrides immediately.
+
+    ```
+    make-lite: Warning: variable 'VAR' redefined at extra.mk:2. Previous definition at Makefile.mk-lite:1. The last definition will be used.
+    ```
+
+*   **Precise Error Locations:** All parsing errors point to the exact `file:line` where the error occurred, so you never have to guess.
+
+This combination of a predictable parsing model and clear, precise feedback makes `make-lite` robust and easy to maintain.
 
 ## How It Works (The Specification)
 
@@ -203,48 +262,62 @@ Migrating simple Makefiles is straightforward.
 
 ## Automated Conversion with an LLM
 
-You can use a capable LLM (like GPT-4, Claude 3, etc.) to automate much of the conversion process. Use the following prompt as a template.
+You can use a capable LLM to automate much of the conversion process.
 
----
-
-**Prompt for LLM-based Makefile Conversion**
-
+### Prompt for Migrating from GNU Make
 
 ```
 You are an expert build system engineer specializing in migrating projects from GNU Make to simpler, more modern alternatives. Your task is to analyze the provided GNU Makefile and convert it into the `make-lite` format.
 
 First, understand the core principles of `make-lite`, which differ from GNU Make:
--   **Premise:** `make-lite` is a simple, predictable command runner that fixes common Make annoyances. It is a single-pass, sequential interpreter.
+-   **Premise:** `make-lite` is a simple, predictable command runner that fixes common Make annoyances.
+-   **Parsing Model:** `make-lite` uses a two-pass parser. In the first pass, it reads all files and populates all variables. If a variable is defined multiple times, the last definition wins. In the second pass, it expands variables in rules. This means you do not need to manually reorder variable definitions to appear before their use.
 -   **What is Supported:** Basic rules (`target: deps`), `VAR = value`, `VAR ?= value`, `$(shell ...)` and implicit shell fallbacks `$(command)`, multi-target rules, `$$` for shell passthrough, `load_env`, `include`.
--   **What is NOT Supported:** Deferred assignment (`=`), `.DEFAULT_GOAL`, automatic variables (`$@`, `$<`, `$^`), complex functions (`patsubst`, `foreach`, `wildcard`, etc.), command-line variable overrides (`make VAR=value`).
+-   **What is NOT Supported:** Deferred assignment (the `=` operator is always eagerly expanded like `:=`), `.DEFAULT_GOAL`, automatic variables (`$@`, `$<`, `$^`), complex functions (`patsubst`, `foreach`, `wildcard`, etc.), command-line variable overrides (`make VAR=value`).
 
 Follow these conversion rules precisely:
 
-**1. Sequential Parsing & File Structure:**
--   **CRITICAL: Reorder Variable Definitions.** Because `make-lite` is a single-pass interpreter, you must ensure that all variables are defined **before** they are used in rule targets or dependencies. If necessary, move variable definition blocks to the top of the file.
+**1. File Structure & Simplification:**
 -   **Root Makefile:** The main file must be named `Makefile.mk-lite`.
 -   **Default Target:** Remove any `.DEFAULT_GOAL` directive. The default target in `make-lite` is simply the first rule in the root `Makefile.mk-lite`. By convention, this should be `all: help` if a `help` target exists.
-
-**2. Simplify Directives & Syntax:**
 -   **Indentation:** Ensure every recipe line is indented. Any whitespace (tabs or spaces) is acceptable.
 -   **Environment Files:** Replace conditional `include .env` logic (e.g., `ifneq (,$(wildcard ./.env))`) with a single `load_env .env` directive.
 -   **Assignments:** Convert both GNU Make's simple `:=` and deferred `=` assignments to `make-lite`'s standard `=` operator. Because `make-lite` uses eager expansion, you may need to refactor rules that depend on deferred expansion.
 -   **Recursive Calls:** Replace `$(MAKE)` or `make` with `make-lite`.
 
-**3. Remove Boilerplate & GNU Make Workarounds:**
+**2. Remove Boilerplate & GNU Make Workarounds:**
 -   Aggressively simplify common workarounds for GNU Make's limitations, as `make-lite` often makes them obsolete.
 -   **Unconditional Generation:** Find and remove any `-force` targets (e.g., `protos-force`). `make-lite`'s dependency tracking is robust enough to not need them.
 -   **Stamp/Sentinel Files:** Find and remove rules that use empty "stamp" files (e.g., `touch .some_task_complete`) merely to trigger other rules.
 -   **Merge Split Multi-Target Rules:** GNU Make sometimes struggles with multi-target rules, so users split them (e.g., one rule for `file.pb.go` and another for `file_grpc.pb.go`). Identify these and **merge them back into a single, clean multi-target rule**.
 -   **Remove `.PHONY`**, `mkdir -p` (when creating a target's parent directory), and the `export` keyword.
 
-**4. Convert Functions & Variables:**
+**3. Convert Functions & Variables:**
 -   **Automatic Variables**: Replace `$@` (target), `$<` (first dependency), and `$^` (all dependencies) with their explicit string values.
 -   **Unsupported Functions**: Rewrite complex GNU Make functions (`patsubst`, `wildcard`, etc.) using `$(shell ...)` with common shell commands like `find` or `sed`. If a direct conversion is not possible, add a `# TODO:` comment explaining that the function needs manual review.
 
 Convert the following GNU Makefile to `make-lite` format.
 
 **GNU Makefile Input:**
+```
+
+### Prompt for Generating New Makefiles
+
+```
+If you need to generate a Makefile, use the `make-lite` format. The file must be named `Makefile.mk-lite`. Follow these rules:
+
+*   **Syntax:** Use `target: dependency` for rules. Recipe commands must be indented with one or more spaces or tabs.
+
+*   **Variables:** All variables (`VAR = value`) are expanded **eagerly** before any rules run. A `$(shell ...)` command in a variable assignment runs only once, during parsing. Use `VAR ?= value` to set a default that can be overridden by the environment.
+
+*   **CRITICAL: No Automatic Variables:** Do not use automatic variables like `$@`, `$<`, or `$^`, or commands like `foreach`. You must write out the explicit target and dependency names in your recipes.
+
+*   **No Boilerplate:** Do not add GNU Make boilerplate or workarounds. `make-lite` handles them automatically:
+    *   Do not use `.PHONY` targets.
+    *   Do not use `mkdir -p` for a target's parent directory.
+    *   Do not use stamp files. A rule with multiple targets runs if *any* target is missing or outdated.
+
+*   **File Lists:** Use `VAR = $(shell find ...)` to gather source file lists.
 ```
 
 ---

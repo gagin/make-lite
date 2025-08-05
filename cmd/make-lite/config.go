@@ -1,7 +1,7 @@
 package main
 
 // --- Application Metadata ---
-var AppVersion = "1.0.0"
+var AppVersion = "1.2.0"
 
 const DefaultMakefile = "Makefile.mk-lite"
 
@@ -24,6 +24,7 @@ const (
 	StatusBuildSuccess       = "make-lite: Build finished successfully."
 	ErrorMissingDependency   = "Dependency '%s' not found for target '%s', and no rule available to create it."
 	ErrorUnsupportedFunction = "GNU Make function '$(%s ...)' is not supported."
+	WarningVarRedefined      = "make-lite: Warning: variable '%s' redefined at %s:%d. Previous definition at %s:%d. The last definition will be used.\n"
 )
 
 // --- Engine Status Messages ---

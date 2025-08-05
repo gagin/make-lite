@@ -1,0 +1,23 @@
+{
+  "name": "Parser: Two-pass parse handles forward variable references",
+  "command": "all",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "# This rule uses $(THE_DEPS) before the variable is defined.\n# A single-pass parser would fail to expand it.\nall: $(THE_DEPS)\n\t@echo \"Final target built from: $(THE_DEPS)\"\n\t@touch all.built\n\n# The variable definition appears *after* its use.\nTHE_DEPS = dep1.txt dep2.txt\n\ndep1.txt:\n\t@echo \"Building dep1...\"\n\t@touch dep1.txt\n\ndep2.txt:\n\t@echo \"Building dep2...\"\n\t@touch dep2.txt"
+    }
+  ],
+  "checks": {
+    "exit_code": 0,
+    "stdout_contains": [
+      "Building dep1...",
+      "Building dep2...",
+      "Final target built from: dep1.txt dep2.txt"
+    ],
+    "files_exist": [
+      "dep1.txt",
+      "dep2.txt",
+      "all.built"
+    ]
+  }
+}

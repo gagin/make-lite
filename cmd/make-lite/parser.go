@@ -9,6 +9,21 @@ import (
 	"strings"
 )
 
+// processedLine holds a line of content along with its original location.
+type processedLine struct {
+	content    string
+	originFile string
+	originLine int
+}
+
+// rawRule holds an unexpanded rule definition, collected during the first pass.
+type rawRule struct {
+	definitionLine string
+	recipeLines    []string
+	originFile     string
+	originLine     int
+}
+
 // Parser is responsible for reading and parsing makefiles.
 type Parser struct {
 	variableStore *VariableStore
@@ -30,17 +45,19 @@ func (p *Parser) ParseFile(filename string) (*Makefile, error) {
 		return nil, fmt.Errorf("could not determine absolute path for %s: %w", filename, err)
 	}
 
+	// This now returns lines with their origin info preserved.
 	processedLines, err := p.processFile(absPath)
 	if err != nil {
 		return nil, err
 	}
 
-	fullContent := p.joinContinuations(processedLines)
-	return p.parseContent(fullContent)
+	// joinContinuations now also preserves origin info.
+	finalLines := p.joinContinuations(processedLines)
+	return p.parseContent(finalLines)
 }
 
-// processFile handles comment removal and file inclusion.
-func (p *Parser) processFile(absPath string) (lines []string, err error) {
+// processFile handles comment removal and file inclusion, returning lines with origin info.
+func (p *Parser) processFile(absPath string) (lines []processedLine, err error) {
 	if p.includeStack[absPath] {
 		return nil, fmt.Errorf("circular include detected: %s", absPath)
 	}
@@ -60,19 +77,18 @@ func (p *Parser) processFile(absPath string) (lines []string, err error) {
 		}
 	}()
 
-	var outputLines []string
+	var outputLines []processedLine
 	scanner := bufio.NewScanner(file)
 	lineNumber := 0
 	for scanner.Scan() {
 		lineNumber++
-		line := scanner.Text()
+		lineContent := scanner.Text()
 
-		// Comment Removal (respecting escapes)
 		var contentPart strings.Builder
 		var commentPart strings.Builder
 		inComment := false
 		isEscaped := false
-		for _, r := range line {
+		for _, r := range lineContent {
 			if isEscaped {
 				if inComment {
 					commentPart.WriteRune(r)
@@ -104,9 +120,9 @@ func (p *Parser) processFile(absPath string) (lines []string, err error) {
 		if strings.HasSuffix(strings.TrimSpace(commentPart.String()), `\`) {
 			return nil, fmt.Errorf("ambiguous line continuation in comment at %s:%d", absPath, lineNumber)
 		}
-		line = contentPart.String()
+		lineContent = contentPart.String()
 
-		trimmedLine := strings.TrimSpace(line)
+		trimmedLine := strings.TrimSpace(lineContent)
 		if strings.HasPrefix(trimmedLine, "include ") {
 			includePathStr := strings.TrimSpace(trimmedLine[len("include"):])
 			includePathStr = trimQuotes(includePathStr)
@@ -120,7 +136,11 @@ func (p *Parser) processFile(absPath string) (lines []string, err error) {
 			}
 			outputLines = append(outputLines, includedLines...)
 		} else {
-			outputLines = append(outputLines, line)
+			outputLines = append(outputLines, processedLine{
+				content:    lineContent,
+				originFile: absPath,
+				originLine: lineNumber,
+			})
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -150,78 +170,109 @@ func splitOnUnescaped(s string, sep rune) (string, string, bool) {
 }
 
 // joinContinuations processes lines, joining those ending in an unescaped backslash.
-func (p *Parser) joinContinuations(lines []string) string {
+// It preserves the origin of the first line in a continuation sequence.
+func (p *Parser) joinContinuations(lines []processedLine) []processedLine {
+	if len(lines) == 0 {
+		return nil
+	}
+	var result []processedLine
+	current := lines[0]
 	var builder strings.Builder
-	for i, line := range lines {
-		trimmedLine := strings.TrimRight(line, " \t")
-		if strings.HasSuffix(trimmedLine, `\`) && !strings.HasSuffix(trimmedLine, `\\`) {
-			builder.WriteString(trimmedLine[:len(trimmedLine)-1])
+	builder.WriteString(current.content)
+
+	for i := 1; i < len(lines); i++ {
+		trimmedContent := strings.TrimRight(builder.String(), " \t")
+		if strings.HasSuffix(trimmedContent, `\`) && !strings.HasSuffix(trimmedContent, `\\`) {
+			builder.Reset()
+			builder.WriteString(trimmedContent[:len(trimmedContent)-1])
+			builder.WriteString(lines[i].content)
+			current.content = builder.String()
 		} else {
-			builder.WriteString(line)
-			if i < len(lines)-1 {
-				builder.WriteByte('\n')
-			}
+			result = append(result, current)
+			current = lines[i]
+			builder.Reset()
+			builder.WriteString(current.content)
 		}
 	}
-	return builder.String()
+	result = append(result, current)
+	return result
 }
 
-// parseContent performs the final parse of the fully processed string buffer.
-func (p *Parser) parseContent(content string) (*Makefile, error) {
-	makefile := NewMakefile()
-	lines := strings.Split(content, "\n")
+// parseContent performs the two-pass parse.
+func (p *Parser) parseContent(lines []processedLine) (*Makefile, error) {
+	// --- Pass 1: Populate VariableStore and collect raw, unexpanded rules ---
+	rawRules, err := p.collectVarsAndRawRules(lines)
+	if err != nil {
+		return nil, err
+	}
 
+	// --- Pass 2: Parse the collected raw rules using the now-complete VariableStore ---
+	makefile := NewMakefile()
+	for _, raw := range rawRules {
+		left, right, _ := splitOnUnescaped(raw.definitionLine, ':')
+
+		expandedLeft, err := p.variableStore.Expand(left, true)
+		if err != nil {
+			return nil, fmt.Errorf("at %s:%d: error expanding targets: %w", raw.originFile, raw.originLine, err)
+		}
+		expandedRight, err := p.variableStore.Expand(right, true)
+		if err != nil {
+			return nil, fmt.Errorf("at %s:%d: error expanding sources: %w", raw.originFile, raw.originLine, err)
+		}
+
+		targets := strings.Fields(expandedLeft)
+		sources := strings.Fields(expandedRight)
+		if len(targets) == 0 {
+			return nil, fmt.Errorf("at %s:%d: rule with no target: \"%s\"", raw.originFile, raw.originLine, raw.definitionLine)
+		}
+
+		rule := &Rule{
+			Targets: targets,
+			Sources: sources,
+			Recipe:  raw.recipeLines,
+			Origin:  fmt.Sprintf("%s:%d", raw.originFile, raw.originLine),
+		}
+		makefile.AddRule(rule)
+	}
+
+	return makefile, nil
+}
+
+// collectVarsAndRawRules is the first pass, now using processedLine.
+func (p *Parser) collectVarsAndRawRules(lines []processedLine) ([]rawRule, error) {
+	var collectedRules []rawRule
 	for i := 0; i < len(lines); i++ {
-		line := lines[i]
-		trimmedLine := strings.TrimSpace(line)
+		pLine := lines[i]
+		trimmedLine := strings.TrimSpace(pLine.content)
 
 		if trimmedLine == "" {
 			continue
 		}
 
-		isIndented := len(line) > 0 && (line[0] == ' ' || line[0] == '\t')
-		if isIndented {
-			return nil, fmt.Errorf("invalid line %d: unexpected indented line, must follow a rule definition: \"%s\"", i+1, trimmedLine)
-		}
-
 		if left, right, ok := splitOnUnescaped(trimmedLine, ':'); ok && !strings.Contains(left, "=") {
 			if _, _, hasMulti := splitOnUnescaped(right, ':'); hasMulti {
-				return nil, fmt.Errorf("invalid rule with multiple colons on line %d: \"%s\"", i+1, trimmedLine)
+				return nil, fmt.Errorf("at %s:%d: invalid rule with multiple colons: \"%s\"", pLine.originFile, pLine.originLine, trimmedLine)
 			}
-
-			expandedLeft, err := p.variableStore.Expand(left, true)
-			if err != nil {
-				return nil, fmt.Errorf("on line %d: error expanding targets: %w", i+1, err)
+			raw := rawRule{
+				definitionLine: trimmedLine,
+				recipeLines:    []string{},
+				originFile:     pLine.originFile,
+				originLine:     pLine.originLine,
 			}
-			expandedRight, err := p.variableStore.Expand(right, true)
-			if err != nil {
-				return nil, fmt.Errorf("on line %d: error expanding sources: %w", i+1, err)
-			}
-
-			targets := strings.Fields(expandedLeft)
-			sources := strings.Fields(expandedRight)
-			if len(targets) == 0 {
-				return nil, fmt.Errorf("rule with no target on line %d: \"%s\"", i+1, trimmedLine)
-			}
-
-			rule := &Rule{Targets: targets, Sources: sources, Recipe: []string{}, Origin: fmt.Sprintf("line %d", i+1)}
-
 			j := i + 1
 			for ; j < len(lines); j++ {
-				recipeLine := lines[j]
+				recipeLine := lines[j].content
 				if strings.TrimSpace(recipeLine) == "" {
-					rule.Recipe = append(rule.Recipe, recipeLine)
+					raw.recipeLines = append(raw.recipeLines, recipeLine)
 					continue
 				}
-				recipeIsIndented := len(recipeLine) > 0 && (recipeLine[0] == ' ' || recipeLine[0] == '\t')
-				if !recipeIsIndented {
+				if !(len(recipeLine) > 0 && (recipeLine[0] == ' ' || recipeLine[0] == '\t')) {
 					break
 				}
-				rule.Recipe = append(rule.Recipe, recipeLine)
+				raw.recipeLines = append(raw.recipeLines, recipeLine)
 			}
 			i = j - 1
-			makefile.AddRule(rule)
-
+			collectedRules = append(collectedRules, raw)
 		} else if left, right, ok := splitOnUnescaped(trimmedLine, '='); ok {
 			op := "="
 			if strings.HasSuffix(strings.TrimSpace(left), "?") {
@@ -231,32 +282,32 @@ func (p *Parser) parseContent(content string) (*Makefile, error) {
 			keyPart := strings.TrimSpace(left)
 			keyTokens := strings.Fields(keyPart)
 			if len(keyTokens) == 0 {
-				return nil, fmt.Errorf("invalid assignment with no variable name on line %d: \"%s\"", i+1, trimmedLine)
+				return nil, fmt.Errorf("at %s:%d: invalid assignment with no variable name: \"%s\"", pLine.originFile, pLine.originLine, trimmedLine)
 			}
 			varName := keyTokens[len(keyTokens)-1]
-
 			value, err := p.variableStore.Expand(strings.TrimSpace(right), true)
 			if err != nil {
-				return nil, fmt.Errorf("on line %d: error expanding variable value: %w", i+1, err)
+				return nil, fmt.Errorf("at %s:%d: error expanding variable value: %w", pLine.originFile, pLine.originLine, err)
 			}
-
 			source := sourceMakefileUnconditional
 			if op == "?=" {
 				source = sourceMakefileConditional
 			}
-			p.variableStore.Set(varName, value, source)
-
+			p.variableStore.Set(varName, value, source, pLine.originFile, pLine.originLine)
 		} else if strings.HasPrefix(trimmedLine, "load_env ") {
 			envPath := strings.TrimSpace(trimmedLine[len("load_env"):])
 			envPath = trimQuotes(envPath)
 			if err := p.loadEnvFile(envPath); err != nil {
-				return nil, fmt.Errorf("on line %d: %w", i+1, err)
+				return nil, fmt.Errorf("at %s:%d: %w", pLine.originFile, pLine.originLine, err)
 			}
 		} else {
-			return nil, fmt.Errorf("invalid line %d: not a rule, assignment, or directive: \"%s\"", i+1, trimmedLine)
+			if len(pLine.content) > 0 && (pLine.content[0] == ' ' || pLine.content[0] == '\t') {
+				return nil, fmt.Errorf("at %s:%d: unexpected indented line, must follow a rule definition: \"%s\"", pLine.originFile, pLine.originLine, trimmedLine)
+			}
+			return nil, fmt.Errorf("at %s:%d: not a rule, assignment, or directive: \"%s\"", pLine.originFile, pLine.originLine, trimmedLine)
 		}
 	}
-	return makefile, nil
+	return collectedRules, nil
 }
 
 // loadEnvFile reads a .env file and populates the variable store.
@@ -274,10 +325,10 @@ func (p *Parser) loadEnvFile(filename string) (err error) {
 		}
 	}()
 	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
+	for lineNum := 1; scanner.Scan(); lineNum++ {
 		key, val, ok := cleanEnvLine(scanner.Text())
 		if ok {
-			p.variableStore.Set(key, val, sourceEnvFile)
+			p.variableStore.Set(key, val, sourceEnvFile, filename, lineNum)
 		}
 	}
 	return scanner.Err()
