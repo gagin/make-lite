@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2025-08-26
+
+### Fixed
+
+-   **Core Logic:** Fixed a critical regression where a file-based target would be incorrectly rebuilt every time if it depended on a phony (symbolic) target. The build engine now correctly treats phony dependencies as ordering-only constraints, ensuring they do not "infect" the freshness check of file-based targets. This restores the intended "non-infectious phony target" behavior, a core principle of the project.
+
+### Added
+
+-   **Testing:** Split the phony dependency test into two separate, more explicit cases (`22` and `23`) to independently verify that a file target is correctly built when missing and correctly skipped when up-to-date, even when it depends on a phony target
+
 ## [1.2.1] - 2025-08-26
 
 ### Fixed
