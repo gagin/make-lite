@@ -1,16 +1,22 @@
 {
-  "name": "Regression: A file target depending on a phony target rebuilds correctly",
+  "name": "Correctness: Phony dependency is non-infectious for up-to-date file target",
   "command": "output.txt",
   "files": [
     {
       "path": "Makefile.mk-lite",
       "content": "output.txt: check\n\t@echo \"Building output.txt...\"\n\t@touch output.txt\n\ncheck:\n\t@echo \"Running phony check...\""
+    },
+    {
+      "path": "output.txt",
+      "content": "already exists"
     }
   ],
   "checks": {
     "exit_code": 0,
     "stdout_contains": [
-      "Running phony check...",
+      "Running phony check..."
+    ],
+    "stdout_not_contains": [
       "Building output.txt..."
     ],
     "files_exist": [

@@ -146,9 +146,11 @@ func (e *Engine) checkFreshness(rule *Rule) (bool, string, error) {
 		if err != nil {
 			if os.IsNotExist(err) {
 				// Check if the missing "file" is actually another rule target (a phony dependency).
-				// If so, this target must be rebuilt.
 				if _, isRule := e.makefile.RuleMap[sourceName]; isRule {
-					return true, fmt.Sprintf("dependency '%s' is a symbolic target", sourceName), nil
+					// It's a phony dependency. It has already been run.
+					// It does not influence the freshness of the current file-based target.
+					// So we just continue to the next source.
+					continue
 				}
 				// Otherwise, it's a genuine missing file dependency.
 				return false, "", fmt.Errorf(ErrorMissingDependency, sourceName, rule.Targets[0])

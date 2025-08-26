@@ -1,0 +1,20 @@
+{
+  "name": "Regression: File depending on phony target builds correctly when missing",
+  "command": "output.txt",
+  "files": [
+    {
+      "path": "Makefile.mk-lite",
+      "content": "output.txt: check\n\t@echo \"Building output.txt...\"\n\t@touch output.txt\n\ncheck:\n\t@echo \"Running phony check...\""
+    }
+  ],
+  "checks": {
+    "exit_code": 0,
+    "stdout_contains": [
+      "Running phony check...",
+      "Building output.txt..."
+    ],
+    "files_exist": [
+      "output.txt"
+    ]
+  }
+}
