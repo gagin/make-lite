@@ -13,8 +13,8 @@ If you love the core dependency-graph concept of Make but are tired of `.PHONY`,
 ## Core Features
 
 -   **Intuitive Dependency Rules (The Core Fix)**  
-    This is the most important feature. A rule runs if **any** of its target files are missing, or if **any** source file is newer than **any** target file. This elegant logic solves multiple GNU Make frustrations at once:
-    -   **Multi-target rules just work.** A rule like `file_pb.go file_grpc.pb.go: file.proto` will correctly re-run if *either* generated file is deleted.
+    This is the most important feature. A rule runs if **any** of its target files are missing, or if **any** source file is newer than the **oldest** target file. This elegant logic solves multiple GNU Make frustrations at once:
+    -   **Multi-target rules just work.** The freshness check is performed against *all* targets in the rule, not just the first. A rule like `file_pb.go file_grpc.pb.go: file.proto` will correctly re-run if *either* generated file is deleted or if `file.proto` is updated.
     -   **Code generators are handled perfectly.** `protoc` creating two files from one source is no longer a problem.
 
 -   **Flexible Recipe Indentation**  
@@ -149,6 +149,50 @@ This is the correct and expected behavior, but it's important to be aware of whe
 -   A rule's recipe runs if **any** of its targets don't exist, or if **any** of its sources are newer than the **oldest** target.
 -   If a dependency is missing from the filesystem and there is no rule to create it, `make-lite` exits with a fatal error.
 
+## Troubleshooting & Common Pitfalls
+
+This section covers common mistakes, especially those made when migrating from GNU Make or using LLM-generated code.
+
+#### 1. Pitfall: Unwanted Quotes in Variables
+
+**Problem:** You define a variable `VAR = "my value"` and expect `VAR` to be `my value`, but it's actually `"my value"`.
+
+**Why:** Variable assignments in a `Makefile.mk-lite` are **literal**. Unlike the `load_env` directive, the parser does not strip surrounding quotes from the value.
+
+**Solution:** Do not quote string values in assignments unless you explicitly want the quotes to be part of the final command.
+
+-   **Incorrect:** `GREETING = "Hello World"`
+-   **Correct:** `GREETING = Hello World`
+
+#### 2. Pitfall: Accessing Shell Environment Variables
+
+**Problem:** You try to use `$(HOME)` or `$PATH` in a variable assignment and it's either blank or causes an error.
+
+**Why:** `make-lite` is not a shell. The `$(...)` syntax first looks for a `make-lite` variable. It does not automatically access the shell's environment.
+
+**Solution:** Use the `$(shell ...)` function combined with `$$` to explicitly query the shell's environment.
+
+-   **Incorrect:** `MY_HOME = $(HOME)`
+-   **Correct:** `MY_HOME = $(shell echo $$HOME)`
+
+#### 3. Pitfall: When does `$(shell ...)` run?
+
+**Problem:** You're not sure if a `$(shell ...)` command will run once or many times.
+
+**Why:** This depends entirely on where you define it, due to eager expansion.
+
+**Solution:** Remember this simple rule:
+-   **In a variable assignment:** `VAR = $(shell ...)` runs **once** when the Makefile is first parsed. It's great for configuration that doesn't change.
+-   **In a recipe:** `\t echo $(shell ...)` runs **every time** that recipe line is executed. It's used for capturing dynamic state during the build.
+
+#### 4. Pitfall: Is a Colon (`:`) in a Value Safe?
+
+**Problem:** You need a URL or other string with a colon in a variable, like `API_URL = http://localhost:8080`.
+
+**Why:** This is perfectly safe. The parser checks for an `=` on a line first. If it finds one, it treats the line as an assignment and does not look for a `:` to define a rule.
+
+**Solution:** No change is needed. You do not need to escape colons that appear in the value part of a variable assignment.
+
 ## Example: Building `make-lite` with `make-lite`
 
 This project "eats its own dog food." Here is the actual `Makefile.mk-lite` used to build this tool, which serves as a great example of best practices.
@@ -238,31 +282,9 @@ ln -sf ~/.local/bin/make-lite mk-lite/make
 **3. Allow `direnv`:**
 Finally, run `direnv allow` in your terminal. Now, any time you type `make`, the shell will find and execute your local `make-lite` symlink instead of the system `make`.
 
-## Migrating from GNU Make
-
-Migrating simple Makefiles is straightforward.
-
-#### What Works as Expected
-
--   Basic `target: dependency` rules.
--   `VAR = value` and `VAR ?= value` assignments.
--   Recipe commands prefixed with `@` for suppression.
--   `$(shell command)` and implicit `$(command)` expansion.
--   `$$` for passing a literal `$` to the shell.
-
-#### Key Differences & Unsupported Features
-
--   **Flexible Recipe Indentation**: Like GNU Make, recipe lines must be indented to be part of a recipe. The crucial difference is that `make-lite` allows **any whitespace indentation (one or more spaces or tabs)**. This completely eliminates GNU Make's strict 'tab-only' rule and the infamous 'missing separator' errors it causes.
--   **No Deferred Expansion (`=`):** `make-lite`'s `=` operator is always **eagerly expanded** (like GNU Make's `:=`). There is no equivalent to GNU Make's deferred (`=`) operator or target-specific variables. This is a deliberate design choice to eliminate the complexity and "workaround" feel of variables that change their value depending on the context. Recipes should be explicit and self-contained.
--   **Variable Precedence**: In `make-lite`, a Makefile assignment (`=`) **always** wins over an environment variable. Use `?=` in your Makefile to allow environment variables to take precedence.
--   **Unsupported Functions**: Complex GNU Make functions are not supported and will cause a fatal error. This includes `patsubst`, `foreach`, `if`, `call`, etc. These must be rewritten using `$(shell ...)` or simpler logic.
--   **No Automatic Variables**: Special variables like `$@` (target), `$<` (first dependency), and `$^` (all dependencies) are not supported. You must use the explicit names in your recipes.
--   **No Command-Line Variable Overrides**: The `make VAR=value` syntax is not supported. Use environment variables instead (`VAR=value make-lite`).
--   **No `-e` / `--environment-overrides` flag**.
-
 ## Automated Conversion with an LLM
 
-You can use a capable LLM to automate much of the conversion process.
+You can use a capable LLM (like GPT-4, Claude 3, etc.) to automate much of the conversion process.
 
 ### Prompt for Migrating from GNU Make
 
@@ -303,22 +325,16 @@ Convert the following GNU Makefile to `make-lite` format.
 
 ### Prompt for Generating New Makefiles
 
-```
-If you need to generate a Makefile, use the `make-lite` format. The file must be named `Makefile.mk-lite`. Follow these rules:
-
+When generating a Makefile, use the `make-lite` format. The file must be named `Makefile.mk-lite`. Follow these rules:
 *   **Syntax:** Use `target: dependency` for rules. Recipe commands must be indented with one or more spaces or tabs.
-
-*   **Variables:** All variables (`VAR = value`) are expanded **eagerly** before any rules run. A `$(shell ...)` command in a variable assignment runs only once, during parsing. Use `VAR ?= value` to set a default that can be overridden by the environment.
-
-*   **CRITICAL: No Automatic Variables:** Do not use automatic variables like `$@`, `$<`, or `$^`, or commands like `foreach`. You must write out the explicit target and dependency names in your recipes.
-
+*   **Variables:** All variables (`VAR = value`) are expanded **eagerly** before any rules run. A `$(shell ...)` command in a variable assignment runs only once, during parsing. Use `VAR ?= value` to set a default that can be overridden by the environment. Use $$ within a shell command to make the shell expand a variable.
+*   **CRITICAL: No Automatic Variables:** Do not use automatic variables like `$@`, `$<`, or `$^`. You must write out the explicit target and dependency names in your recipes.
 *   **No Boilerplate:** Do not add GNU Make boilerplate or workarounds. `make-lite` handles them automatically:
     *   Do not use `.PHONY` targets.
     *   Do not use `mkdir -p` for a target's parent directory.
     *   Do not use stamp files. A rule with multiple targets runs if *any* target is missing or outdated.
-
+    *   Do not `export` or prefix recipe commands with envs, anything assigned is assigned in command's environment too.
 *   **File Lists:** Use `VAR = $(shell find ...)` to gather source file lists.
-```
 
 ---
 
